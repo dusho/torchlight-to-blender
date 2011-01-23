@@ -725,8 +725,8 @@ def ParseActionAnimations(xmldoc):
 						for keyframe in keyframes.getElementsByTagName('keyframe'):
 							time = float(keyframe.getAttributeNode('time').value)
 							for translate in keyframe.getElementsByTagName('translate'):
-								x = float(translate.getAttributeNode('y').value)
-								y = -float(translate.getAttributeNode('x').value)
+								x = float(translate.getAttributeNode('x').value)
+								y = float(translate.getAttributeNode('y').value)
 								z = float(translate.getAttributeNode('z').value)
 								translate = [x,y,z]
 							for rotate in keyframe.getElementsByTagName('rotate'):
@@ -760,11 +760,11 @@ def CreateActions(ActionsDic,armaturename,BonesDic):
 			isActionData = True
 			rpbone = restpose.bones[track]			
 			rpbonequat = rpbone.matrix['BONESPACE'].rotationPart().toQuat()			
-			rpbonetrans = Mathutils.Vector(-BonesData[track]['position'][0], BonesData[track]['position'][2], BonesData[track]['position'][1])
+			rpbonetrans = Mathutils.Vector(BonesData[track]['position'][2], BonesData[track]['position'][0], BonesData[track]['position'][1])
 			sprot = BonesDic[track]['rotation']
 			sploc = BonesDic[track]['position']
 			spbonequat = Mathutils.Quaternion(Mathutils.Vector(sprot[2],sprot[0],sprot[1]),math.degrees(sprot[3]))
-			spbonetrans = Mathutils.Vector(-sploc[0], sploc[2], sploc[1])
+			spbonetrans = Mathutils.Vector(sploc[2], sploc[0], sploc[1])
 			quatdiff = Mathutils.DifferenceQuats(rpbonequat,spbonequat).toMatrix()
 			transdiff = spbonetrans - rpbonetrans			
 			pbone = pose.bones[track]
@@ -779,10 +779,10 @@ def CreateActions(ActionsDic,armaturename,BonesDic):
 				quat = (quataction*quatdiff).toQuat()			
 				pbone.quat = quat
 				pbone.insertKey(armature,frame,Object.Pose.ROT)	
-				pbone.loc = Mathutils.Vector(-kfrs[1][0],kfrs[1][2],kfrs[1][1]) + transdiff
+				pbone.loc = Mathutils.Vector(kfrs[1][2],kfrs[1][0],kfrs[1][1]) + transdiff
 				if(BonesDic[track].has_key('parent')):
 					if(BonesDic[track]['parent'] == 'root'):
-						pbone.loc = Mathutils.Vector(kfrs[1][2],-kfrs[1][0],-kfrs[1][1]) + Mathutils.Vector(transdiff[2],-transdiff[0],-transdiff[1])
+						pbone.loc = Mathutils.Vector(kfrs[1][2],-kfrs[1][1],kfrs[1][0]) + Mathutils.Vector(transdiff[2],-transdiff[0],-transdiff[1])
 									
 				pbone.insertKey(armature,frame,Object.Pose.LOC)
 		# only if there are actions		
