@@ -55,7 +55,7 @@ import os
 
 # SETTINGS
 # if set to true, keeps converted .xml files in directory
-KEEP_XML = True
+KEEP_XML = False
 # command line parameter to execute OgreXMLConverter
 # here place path to your OgreXmlConverter
 ogreXMLConverter = "D:\stuff\Torchlight_modding\orge_tools\OgreXmlConverter.exe -q"
