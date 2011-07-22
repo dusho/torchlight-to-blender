@@ -11,7 +11,7 @@ Changes: Dusho, Rene Lacson
 """
 
 __author__ = "Daniel Handke & Dusho"
-__version__ = "0.94 20-January-2010"
+__version__ = "0.95 22-July-2011"
 
 __bpydoc__ = """\
 This script imports Torchlight Ogre models into Blender.
@@ -37,6 +37,7 @@ Known issues:<br>
       the first uv set.
 	 
 History:<br>
+	* v0.95 - if linked skeleton is not found, mesh is still imported, but skeleton isn't linked to mesh anymore (23-July-2011)
 	* v0.94 - added check for parent when creating zero bones (was preventing some models from importing) (20-January-2011)
 	* v0.93 - bone with root parent now translated in correct coordinate system (applied 'bind to action' skeleton delta may be still wrong) (16-January-2011)
 	* v0.92 - fixed name truncation (10-January-2010)
@@ -809,9 +810,13 @@ def CreateSkeleton(xml_doc, folder, name):
 		# get the skeleton link of the mesh
 		skeleton_link = xml_doc.getElementsByTagName("skeletonlink")[0]
 		filename = os.path.join(folder, skeleton_link.getAttribute("name"))
-		skel_xml_doc = OpenFile(filename + ".xml")	
-		if skel_xml_doc == "None":
-			print "%s file not found!" % filename
+		try:
+			skel_xml_doc = OpenFile(filename + ".xml")	
+			if skel_xml_doc == "None":
+				print "%s file not found!" % filename
+				return
+		except:
+			print "%s file not found! Mesh won't load and link associated skeleton." % filename
 			return
 	else:
 		return
