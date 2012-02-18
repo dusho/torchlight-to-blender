@@ -18,6 +18,35 @@
 
 # <pep8-80 compliant>
 
+"""
+Name: 'OGRE for Torchlight (*.MESH)'
+Blender: 2.59
+Group: 'Import'
+Tooltip: 'Import Torchlight OGRE files'
+    
+Author: Dusho
+"""
+
+__author__ = "Dusho"
+__version__ = "0.0 12-Feb-2012"
+
+__bpydoc__ = """\
+This script imports Torchlight Ogre models into Blender.
+
+Supported:<br>
+    * TODO
+
+Missing:<br>    
+    * TODO
+
+Known issues:<br>
+    * TODO
+     
+History:<br>
+    * v0.0 (12-Feb-2012) - file created
+    * v0.1 (18-Feb-2012) - got Blender add-on scheme working
+"""
+
 bl_info = {
     "name": "Torchlight MESH format",
     "author": "Dusho",
@@ -65,132 +94,19 @@ class ImportTL(bpy.types.Operator, ImportHelper):
             default="*.mesh;*.MESH",
             options={'HIDDEN'},
             )
-#
-#    use_ngons = BoolProperty(
-#            name="NGons",
-#            description="Import faces with more then 4 verts as fgons",
-#            default=True,
-#            )
-#    use_edges = BoolProperty(
-#            name="Lines",
-#            description="Import lines and faces with 2 verts as edge",
-#            default=True,
-#            )
-#    use_smooth_groups = BoolProperty(
-#            name="Smooth Groups",
-#            description="Surround smooth groups by sharp edges",
-#            default=True,
-#            )
-#
-#    use_split_objects = BoolProperty(
-#            name="Object",
-#            description="Import OBJ Objects into Blender Objects",
-#            default=True,
-#            )
-#    use_split_groups = BoolProperty(
-#            name="Group",
-#            description="Import OBJ Groups into Blender Objects",
-#            default=True,
-#            )
-#
-#    use_groups_as_vgroups = BoolProperty(
-#            name="Poly Groups",
-#            description="Import OBJ groups as vertex groups.",
-#            default=False,
-#            )
-#
-#    use_image_search = BoolProperty(
-#            name="Image Search",
-#            description=("Search subdirs for any assosiated images "
-#                         "(Warning, may be slow)"),
-#            default=True,
-#            )
-#
-#    split_mode = EnumProperty(
-#            name="Split",
-#            items=(('ON', "Split", "Split geometry, omits unused verts"),
-#                   ('OFF', "Keep Vert Order", "Keep vertex order from file"),
-#                   ),
-#            )
-#
-#    global_clamp_size = FloatProperty(
-#            name="Clamp Scale",
-#            description="Clamp the size to this maximum (Zero to Disable)",
-#            min=0.0, max=1000.0,
-#            soft_min=0.0, soft_max=1000.0,
-#            default=0.0,
-#            )
-#    axis_forward = EnumProperty(
-#            name="Forward",
-#            items=(('X', "X Forward", ""),
-#                   ('Y', "Y Forward", ""),
-#                   ('Z', "Z Forward", ""),
-#                   ('-X', "-X Forward", ""),
-#                   ('-Y', "-Y Forward", ""),
-#                   ('-Z', "-Z Forward", ""),
-#                   ),
-#            default='-Z',
-#            )
-#
-#    axis_up = EnumProperty(
-#            name="Up",
-#            items=(('X', "X Up", ""),
-#                   ('Y', "Y Up", ""),
-#                   ('Z', "Z Up", ""),
-#                   ('-X', "-X Up", ""),
-#                   ('-Y', "-Y Up", ""),
-#                   ('-Z', "-Z Up", ""),
-#                   ),
-#            default='Y',
-#            )
+
 
     def execute(self, context):
         # print("Selected: " + context.active_object.name)
         from . import TLImport
 
-#        if self.split_mode == 'OFF':
-#            self.use_split_objects = False
-#            self.use_split_groups = False
-#        else:
-#            self.use_groups_as_vgroups = False
-#
         keywords = self.as_keywords(ignore=("filter_glob",))
 
-#
-#        global_matrix = axis_conversion(from_forward=self.axis_forward,
-#                                        from_up=self.axis_up,
-#                                        ).to_4x4()
-#        keywords["global_matrix"] = global_matrix
-#
         return TLImport.load(self, context, **keywords)
 
     def draw(self, context):
         layout = self.layout
-
-#        row = layout.row(align=True)
-#        row.prop(self, "use_ngons")
-#        row.prop(self, "use_edges")
-#
-#        layout.prop(self, "use_smooth_groups")
-#
-#        box = layout.box()
-#        row = box.row()
-#        row.prop(self, "split_mode", expand=True)
-#
-#        row = box.row()
-#        if self.split_mode == 'ON':
-#            row.label(text="Split by:")
-#            row.prop(self, "use_split_objects")
-#            row.prop(self, "use_split_groups")
-#        else:
-#            row.prop(self, "use_groups_as_vgroups")
-#
-#        row = layout.split(percentage=0.67)
-#        row.prop(self, "global_clamp_size")
-#        layout.prop(self, "axis_forward")
-#        layout.prop(self, "axis_up")
-#
-#        layout.prop(self, "use_image_search")
+       
 
 
 class ExportTL(bpy.types.Operator, ExportHelper):
@@ -206,157 +122,13 @@ class ExportTL(bpy.types.Operator, ExportHelper):
             options={'HIDDEN'},
             )
 #
-#    # context group
-#    use_selection = BoolProperty(
-#            name="Selection Only",
-#            description="Export selected objects only",
-#            default=False,
-#            )
-#    use_all_scenes = BoolProperty(
-#            name="All Scenes",
-#            description="",
-#            default=False,
-#            )
-#    use_animation = BoolProperty(
-#            name="Animation",
-#            description="",
-#            default=False,
-#            )
-#
-#    # object group
-#    use_apply_modifiers = BoolProperty(
-#            name="Apply Modifiers",
-#            description="Apply modifiers (preview resolution)",
-#            default=True,
-#            )
-#
-#    # extra data group
-#    use_edges = BoolProperty(
-#            name="Edges",
-#            description="",
-#            default=True,
-#            )
-#    use_normals = BoolProperty(
-#            name="Normals",
-#            description="",
-#            default=False,
-#            )
-#    use_hq_normals = BoolProperty(
-#            name="High Quality Normals",
-#            description="",
-#            default=True,
-#            )
-#    use_uvs = BoolProperty(
-#            name="UVs",
-#            description="",
-#            default=True,
-#            )
-#    use_materials = BoolProperty(
-#            name="Materials",
-#            description="",
-#            default=True,
-#            )
-#    use_triangles = BoolProperty(
-#            name="Triangulate",
-#            description="",
-#            default=False,
-#            )
-#    use_vertex_groups = BoolProperty(
-#            name="Polygroups",
-#            description="",
-#            default=False,
-#            )
-#    use_nurbs = BoolProperty(
-#            name="Nurbs",
-#            description="",
-#            default=False,
-#            )
-#
-#    # grouping group
-#    use_blen_objects = BoolProperty(
-#            name="Objects as OBJ Objects",
-#            description="",
-#            default=True,
-#            )
-#    group_by_object = BoolProperty(
-#            name="Objects as OBJ Groups ",
-#            description="",
-#            default=False,
-#            )
-#    group_by_material = BoolProperty(
-#            name="Material Groups",
-#            description="",
-#            default=False,
-#            )
-#    keep_vertex_order = BoolProperty(
-#            name="Keep Vertex Order",
-#            description="",
-#            default=False,
-#            )
-#
-#    global_scale = FloatProperty(
-#            name="Scale",
-#            description="Scale all data",
-#            min=0.01, max=1000.0,
-#            soft_min=0.01,
-#            soft_max=1000.0,
-#            default=1.0,
-#            )
-#
-#    axis_forward = EnumProperty(
-#            name="Forward",
-#            items=(('X', "X Forward", ""),
-#                   ('Y', "Y Forward", ""),
-#                   ('Z', "Z Forward", ""),
-#                   ('-X', "-X Forward", ""),
-#                   ('-Y', "-Y Forward", ""),
-#                   ('-Z', "-Z Forward", ""),
-#                   ),
-#            default='-Z',
-#            )
-#
-#    axis_up = EnumProperty(
-#            name="Up",
-#            items=(('X', "X Up", ""),
-#                   ('Y', "Y Up", ""),
-#                   ('Z', "Z Up", ""),
-#                   ('-X', "-X Up", ""),
-#                   ('-Y', "-Y Up", ""),
-#                   ('-Z', "-Z Up", ""),
-#                   ),
-#            default='Y',
-#            )
-#
-#    path_mode = path_reference_mode
-#
-#    check_extension = True
 
     def execute(self, context):
         from . import TLExport
-
         from mathutils import Matrix
         
         keywords = self.as_keywords(ignore=("check_existing", "filter_glob"))
-        
-#        keywords = self.as_keywords(ignore=("axis_forward",
-#                                            "axis_up",
-#                                            "global_scale",
-#                                            "check_existing",
-#                                            "filter_glob",
-#                                            ))
-#
-#        global_matrix = Matrix()
-#
-#        global_matrix[0][0] = \
-#        global_matrix[1][1] = \
-#        global_matrix[2][2] = self.global_scale
-#
-#        global_matrix = (global_matrix *
-#                         axis_conversion(to_forward=self.axis_forward,
-#                                         to_up=self.axis_up,
-#                                         ).to_4x4())
-#
-#        keywords["global_matrix"] = global_matrix
+               
         return TLExport.save(self, context, **keywords)       
 
 
