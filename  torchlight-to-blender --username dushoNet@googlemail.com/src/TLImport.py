@@ -37,7 +37,7 @@ MESHDATA:
     ['normals'] - vectors with (x,y,z)
     ['vertexcolors'] - vectors with (r,g,b,a)
     ['texcoordsets'] - integer (number of UV sets)
-    ['uvsets'] - vectors with (u,v) * number or UV sets for vertex
+    ['uvsets'] - vectors with (u,v) * number or UV sets for vertex [(u,v)][(u,v)]...
 ['submeshes'][idx]
         [material] - string (material name)
         [faces] - vectors with faces (v1,v2,v3)
@@ -177,6 +177,112 @@ def xCollectMeshData(xmldoc,meshname,Textures,dirname):
     meshData['submeshes']=OGREObjects
     
     return meshData
+
+def xSaveGeometry(geometry, xDoc, xMesh, isShared):
+    # I guess positions (vertices) must there always
+    vertices = geometry['positions']
+    
+    if isShared:
+        geometryType = "sharedgeometry"
+    else:
+        geometryType = "geometry"
+    
+    isNormals = False
+    if 'normals' in geometry:    
+        isNormals = True
+        normals = geometry['normals']
+        
+    isTexCoordsSets = False
+    if 'texcoordsets' in geometry:
+        isTexCoordsSets = True
+        uvSets = geometry['uvsets']
+    
+    xGeometry = xDoc.createElement(geometryType)
+    xGeometry.setAttribute("vertexcount", str(len(vertices)))
+    xMesh.appendChild(xGeometry)
+    
+    xVertexBuffer = xDoc.createElement("vertexbuffer")
+    xVertexBuffer.setAttribute("positions", "true")
+    if isNormals:
+        xVertexBuffer.setAttribute("normals", "true")
+    if isTexCoordsSets:
+        xVertexBuffer.setAttribute("texture_coord_dimensions_0", "2")
+        xVertexBuffer.setAttribute("texture_coords", "1")
+    xGeometry.appendChild(xVertexBuffer)
+    
+    for i, vx in enumerate(vertices):
+        xVertex = xDoc.createElement("vertex")
+        xVertexBuffer.appendChild(xVertex)
+        xPosition = xDoc.createElement("position")
+        xPosition.setAttribute("x", str(vx[0]))
+        xPosition.setAttribute("y", str(vx[1]))
+        xPosition.setAttribute("z", str(vx[2]))
+        xVertex.appendChild(xPosition)
+        if isNormals:
+            xNormal = xDoc.createElement("normal")
+            xNormal.setAttribute("x", str(normals[i][0]))
+            xNormal.setAttribute("y", str(normals[i][1]))
+            xNormal.setAttribute("z", str(normals[i][2]))
+            xVertex.appendChild(xNormal)
+        if isTexCoordsSets:
+            xUVSet = xDoc.createElement("texcoord")
+            xUVSet.setAttribute("u", str(uvSets[i][0][0])) # take only 1st set for now
+            xUVSet.setAttribute("v", str(uvSets[i][0][1]))
+            xVertex.appendChild(xUVSet)
+            
+def xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry):
+    
+    xSubMeshes = xDoc.createElement("submeshes")
+    xMesh.appendChild(xSubMeshes)
+    
+    for submesh in meshData['submeshes']:
+        
+        xSubMesh = xDoc.createElement("submesh")
+        xSubMesh.setAttribute("material", submesh['material'])
+        if hasSharedGeometry:
+            xSubMesh.setAttribute("usesharedvertices", "true")
+        else:
+            xSubMesh.setAttribute("usesharedvertices", "false")
+        xSubMesh.setAttribute("use32bitindexes", "false")   # TODO: not sure about this
+        xSubMesh.setAttribute("operationtype", "triangle_list")  
+        xSubMeshes.appendChild(xSubMesh)
+        
+        if 'faces' in submesh:
+            faces = submesh['faces']
+            xFaces = xDoc.createElement("faces")
+            xFaces.setAttribute("count", str(len(faces)))
+            xSubMesh.appendChild(xFaces)
+            for face in faces:
+                xFace = xDoc.createElement("face")
+                xFace.setAttribute("v1", str(face[0]))
+                xFace.setAttribute("v2", str(face[1]))
+                xFace.setAttribute("v3", str(face[2]))
+                xFaces.appendChild(xFace)
+    
+def xSaveMeshData(meshData, filepath):    
+    from xml.dom.minidom import Document
+    
+    hasSharedGeometry = False
+    if 'sharedgeometry' in meshData:
+        hasSharedGeometry = True
+        
+    # Create the minidom document
+    xDoc = Document()
+    
+    xMesh = xDoc.createElement("mesh")
+    xDoc.appendChild(xMesh)
+    
+    if hasSharedGeometry:
+        geometry = meshData['sharedgeometry']
+        xSaveGeometry(geometry, xDoc, xMesh, hasSharedGeometry)
+    
+    xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry)
+   
+    # Print our newly created XML    
+    fileWr = open(filepath, 'w') 
+    fileWr.write(xDoc.toprettyxml(indent="    ")) # 4 spaces
+    #doc.writexml(fileWr, "  ")
+    fileWr.close() 
                 
 def CreateMesh(xml_doc, folder, name, materialFile):
 
@@ -187,6 +293,9 @@ def CreateMesh(xml_doc, folder, name, materialFile):
     subObjs = bCreateSubMeshes(meshData)
     # skin submeshes
     #bSkinMesh(subObjs)
+    
+    # TODO, place save code here for now
+    xSaveMeshData(meshData, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_ex.MESH.xml")
     
     print(meshData)
     
@@ -265,7 +374,7 @@ def bCreateSubMeshes(meshData):
         
         allObjects.append(ob)
         
-return allObjects
+        return allObjects
         
 
 def load(operator, context, filepath,       
