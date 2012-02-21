@@ -367,7 +367,64 @@ def xSaveMeshData(meshData, filepath):
     fileWr.write(xDoc.toprettyxml(indent="    ")) # 4 spaces
     #doc.writexml(fileWr, "  ")
     fileWr.close() 
+
+def bCollectMeshData(selectedObjects):
+    meshData = {}
+    subMeshesData = []
+    for ob in selectedObjects:
+        subMeshData = {}
+        #ob = bpy.types.Object ##
+        materialName = ob.name
+        #mesh = bpy.types.Mesh ##
+        mesh = ob.data     
+        
+        uvTex = []
+        faces = []   
+        fcs = mesh.faces    
+        for f in fcs:
+            #f = bpy.types.MeshFace ##
+            oneFace = []
+            for vertexIdx in f.vertices:
+                oneFace.append(vertexIdx)
                 
+            faces.append(oneFace)
+            
+            faceUV=mesh.uv_textures[0].data[f.index]
+            if len(f.vertices)>=3:
+                uvTex.append([[faceUV.uv1[0], faceUV.uv1[1]]]) 
+                uvTex.append([[faceUV.uv2[0], faceUV.uv2[1]]])
+                uvTex.append([[faceUV.uv3[0], faceUV.uv3[1]]])
+            if len(f.vertices)==4:
+                uvTex.append([[faceUV.uv4[0], faceUV.uv4[1]]])                              
+        
+        # geometry
+        geometry = {}
+        #vertices = bpy.types.MeshVertices
+        vertices = mesh.vertices
+        normals = []
+        positions = []
+        
+        for v in vertices:
+            #v = bpy.types.MeshVertex ##
+            #nr = bpy.types.Vec
+            positions.append([v.co[0], v.co[1], v.co[2]])
+            normals.append([v.normal[0],v.normal[1],v.normal[2]])        
+        
+        geometry['positions'] = positions
+        geometry['normals'] = normals
+        geometry['texcoordsets'] = len(mesh.uv_textures)
+        geometry['uvsets'] = uvTex
+        
+        
+        subMeshData['material'] = materialName
+        subMeshData['faces'] = faces
+        subMeshData['geometry'] = geometry
+        subMeshesData.append(subMeshData)
+        
+    meshData['submeshes']=subMeshesData
+    
+    return meshData
+               
 def CreateMesh(xml_doc, folder, name, materialFile):
 
     textures = 'None'
@@ -380,8 +437,35 @@ def CreateMesh(xml_doc, folder, name, materialFile):
     # skin submeshes
     #bSkinMesh(subObjs)
     
+    # temporarily select all imported objects
+    for subOb in subObjs:
+        subOb.select = True
+    
+    # get mesh data from selected objects
+    selectedObjects = []
+    scn = bpy.context.scene
+    for ob in scn.objects:
+        if ob.select==True:
+            selectedObjects.append(ob)
+  
+    blenderMeshData = bCollectMeshData(selectedObjects)
+    
+    fileWr = open("D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_AAblex.MESH.xml", 'w') 
+    fileWr.write(str(blenderMeshData))
+    
+    fileWr.close() 
+    
+    #print(blenderMeshData)
+    xSaveMeshData(blenderMeshData, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_blex.MESH.xml")
+    
+    
     # TODO, need to retrieve meshData from blender
-    # TODO, place save code here for now
+    # TODO, place save code here for now    
+    fileWr = open("D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_AAex.MESH.xml", 'w') 
+    fileWr.write(str(meshData))
+    
+    fileWr.close() 
+    
     xSaveMeshData(meshData, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_ex.MESH.xml")
     
     #xSaveMeshData(meshData, "D:\stuff\Torchlight_modding\org_models\Alchemist\Alchemist_ex.MESH.xml")
@@ -428,8 +512,8 @@ def bCreateSubMeshes(meshData):
                 v.normal = Vector((normals[c][0],normals[c][1],normals[c][2]))
                 c+=1
         # smooth        
-        for f in me.faces:
-            f.use_smooth = True        
+#        for f in me.faces:
+#            f.use_smooth = True        
               
         # material for the submesh
         # Create image texture from image.         
