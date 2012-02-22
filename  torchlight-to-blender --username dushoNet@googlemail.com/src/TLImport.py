@@ -10,7 +10,7 @@ Author: Dusho
 """
 
 __author__ = "Dusho"
-__version__ = "0.2 19-Feb-2012"
+__version__ = "0.3 22-Feb-2012"
 
 __bpydoc__ = """\
 This script imports Torchlight Ogre models into Blender.
@@ -25,6 +25,7 @@ Known issues:<br>
     * TODO
      
 History:<br>
+    * v0.3 (22-Feb-2012) - WIP - started cleaning + using OgreXMLConverter
     * v0.2 (19-Feb-2012) - WIP - working export of geometry and faces
     * v0.1 (18-Feb-2012) - initial 2.59 import code (from .xml)
     * v0.0 (12-Feb-2012) - file created
@@ -58,6 +59,8 @@ from mathutils import Vector, Matrix
 #import math
 import os
 
+#ogreXMLconverter=None
+
 # makes sure name doesn't exceeds blender naming limits
 # also keeps after name (as Torchlight uses names to identify types -boots, chest, ...- with names)
 # TODO: this is not needed for Blender 2.62 and above
@@ -79,6 +82,7 @@ def GetValidBlenderName(name):
         print("WARNING: Name truncated (" + name + " -> " + newname + ")")
             
     return newname
+
 
 def xOpenFile(filename):
     xml_file = open(filename)    
@@ -257,173 +261,173 @@ def xCollectMaterialData(meshData, materialFile, folder):
     print(Textures)
     #return Textures
 
-def xSaveGeometry(geometry, xDoc, xMesh, isShared):
-    # I guess positions (vertices) must be there always
-    vertices = geometry['positions']
-    
-    if isShared:
-        geometryType = "sharedgeometry"
-    else:
-        geometryType = "geometry"
-    
-    isNormals = False
-    if 'normals' in geometry:    
-        isNormals = True
-        normals = geometry['normals']
-        
-    isTexCoordsSets = False
-    if 'texcoordsets' in geometry:
-        isTexCoordsSets = True
-        uvSets = geometry['uvsets']
-    
-    xGeometry = xDoc.createElement(geometryType)
-    xGeometry.setAttribute("vertexcount", str(len(vertices)))
-    xMesh.appendChild(xGeometry)
-    
-    xVertexBuffer = xDoc.createElement("vertexbuffer")
-    xVertexBuffer.setAttribute("positions", "true")
-    if isNormals:
-        xVertexBuffer.setAttribute("normals", "true")
-    if isTexCoordsSets:
-        xVertexBuffer.setAttribute("texture_coord_dimensions_0", "2")
-        xVertexBuffer.setAttribute("texture_coords", "1")
-    xGeometry.appendChild(xVertexBuffer)
-    
-    for i, vx in enumerate(vertices):
-        xVertex = xDoc.createElement("vertex")
-        xVertexBuffer.appendChild(xVertex)
-        xPosition = xDoc.createElement("position")
-        xPosition.setAttribute("x", str(vx[0]))
-        xPosition.setAttribute("y", str(vx[2]))
-        xPosition.setAttribute("z", str(-vx[1]))
-        xVertex.appendChild(xPosition)
-        if isNormals:
-            xNormal = xDoc.createElement("normal")
-            xNormal.setAttribute("x", str(normals[i][0]))
-            xNormal.setAttribute("y", str(normals[i][2]))
-            xNormal.setAttribute("z", str(-normals[i][1]))
-            xVertex.appendChild(xNormal)
-        if isTexCoordsSets:
-            xUVSet = xDoc.createElement("texcoord")
-            xUVSet.setAttribute("u", str(uvSets[i][0][0])) # take only 1st set for now
-            xUVSet.setAttribute("v", str(1.0 - uvSets[i][0][1]))
-            #xUVSet.setAttribute("v", str("%0.7f" % (1.0 - uvSets[i][0][1]))) #rounding
-            xVertex.appendChild(xUVSet)
-            
-def xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry):
-    
-    xSubMeshes = xDoc.createElement("submeshes")
-    xMesh.appendChild(xSubMeshes)
-    
-    for submesh in meshData['submeshes']:
-        
-        xSubMesh = xDoc.createElement("submesh")
-        xSubMesh.setAttribute("material", submesh['material'])
-        if hasSharedGeometry:
-            xSubMesh.setAttribute("usesharedvertices", "true")
-        else:
-            xSubMesh.setAttribute("usesharedvertices", "false")
-        xSubMesh.setAttribute("use32bitindexes", "false")   # TODO: not sure about this
-        xSubMesh.setAttribute("operationtype", "triangle_list")  
-        xSubMeshes.appendChild(xSubMesh)
-        # write all faces
-        if 'faces' in submesh:
-            faces = submesh['faces']
-            xFaces = xDoc.createElement("faces")
-            xFaces.setAttribute("count", str(len(faces)))
-            xSubMesh.appendChild(xFaces)
-            for face in faces:
-                xFace = xDoc.createElement("face")
-                xFace.setAttribute("v1", str(face[0]))
-                xFace.setAttribute("v2", str(face[1]))
-                xFace.setAttribute("v3", str(face[2]))
-                xFaces.appendChild(xFace)
-        # if there is geometry per sub mesh
-        if 'geometry' in submesh:
-            geometry = submesh['geometry']
-            xSaveGeometry(geometry, xDoc, xSubMesh, hasSharedGeometry)
-    
-def xSaveMeshData(meshData, filepath):    
-    from xml.dom.minidom import Document
-    
-    hasSharedGeometry = False
-    if 'sharedgeometry' in meshData:
-        hasSharedGeometry = True
-        
-    # Create the minidom document
-    xDoc = Document()
-    
-    xMesh = xDoc.createElement("mesh")
-    xDoc.appendChild(xMesh)
-    
-    if hasSharedGeometry:
-        geometry = meshData['sharedgeometry']
-        xSaveGeometry(geometry, xDoc, xMesh, hasSharedGeometry)
-    
-    xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry)
-   
-    # Print our newly created XML    
-    fileWr = open(filepath, 'w') 
-    fileWr.write(xDoc.toprettyxml(indent="    ")) # 4 spaces
-    #doc.writexml(fileWr, "  ")
-    fileWr.close() 
-
-def bCollectMeshData(selectedObjects):
-    meshData = {}
-    subMeshesData = []
-    for ob in selectedObjects:
-        subMeshData = {}
-        #ob = bpy.types.Object ##
-        materialName = ob.name
-        #mesh = bpy.types.Mesh ##
-        mesh = ob.data     
-        
-        uvTex = []
-        faces = []   
-        fcs = mesh.faces    
-        for f in fcs:
-            #f = bpy.types.MeshFace ##
-            oneFace = []
-            for vertexIdx in f.vertices:
-                oneFace.append(vertexIdx)
-                
-            faces.append(oneFace)
-            
-            faceUV=mesh.uv_textures[0].data[f.index]
-            if len(f.vertices)>=3:
-                uvTex.append([[faceUV.uv1[0], faceUV.uv1[1]]]) 
-                uvTex.append([[faceUV.uv2[0], faceUV.uv2[1]]])
-                uvTex.append([[faceUV.uv3[0], faceUV.uv3[1]]])
-            if len(f.vertices)==4:
-                uvTex.append([[faceUV.uv4[0], faceUV.uv4[1]]])                              
-        
-        # geometry
-        geometry = {}
-        #vertices = bpy.types.MeshVertices
-        vertices = mesh.vertices
-        normals = []
-        positions = []
-        
-        for v in vertices:
-            #v = bpy.types.MeshVertex ##
-            #nr = bpy.types.Vec
-            positions.append([v.co[0], v.co[1], v.co[2]])
-            normals.append([v.normal[0],v.normal[1],v.normal[2]])        
-        
-        geometry['positions'] = positions
-        geometry['normals'] = normals
-        geometry['texcoordsets'] = len(mesh.uv_textures)
-        geometry['uvsets'] = uvTex
-        
-        
-        subMeshData['material'] = materialName
-        subMeshData['faces'] = faces
-        subMeshData['geometry'] = geometry
-        subMeshesData.append(subMeshData)
-        
-    meshData['submeshes']=subMeshesData
-    
-    return meshData
+#def xSaveGeometry(geometry, xDoc, xMesh, isShared):
+#    # I guess positions (vertices) must be there always
+#    vertices = geometry['positions']
+#    
+#    if isShared:
+#        geometryType = "sharedgeometry"
+#    else:
+#        geometryType = "geometry"
+#    
+#    isNormals = False
+#    if 'normals' in geometry:    
+#        isNormals = True
+#        normals = geometry['normals']
+#        
+#    isTexCoordsSets = False
+#    if 'texcoordsets' in geometry:
+#        isTexCoordsSets = True
+#        uvSets = geometry['uvsets']
+#    
+#    xGeometry = xDoc.createElement(geometryType)
+#    xGeometry.setAttribute("vertexcount", str(len(vertices)))
+#    xMesh.appendChild(xGeometry)
+#    
+#    xVertexBuffer = xDoc.createElement("vertexbuffer")
+#    xVertexBuffer.setAttribute("positions", "true")
+#    if isNormals:
+#        xVertexBuffer.setAttribute("normals", "true")
+#    if isTexCoordsSets:
+#        xVertexBuffer.setAttribute("texture_coord_dimensions_0", "2")
+#        xVertexBuffer.setAttribute("texture_coords", "1")
+#    xGeometry.appendChild(xVertexBuffer)
+#    
+#    for i, vx in enumerate(vertices):
+#        xVertex = xDoc.createElement("vertex")
+#        xVertexBuffer.appendChild(xVertex)
+#        xPosition = xDoc.createElement("position")
+#        xPosition.setAttribute("x", toFmtStr(vx[0]))
+#        xPosition.setAttribute("y", toFmtStr(vx[2]))
+#        xPosition.setAttribute("z", toFmtStr(-vx[1]))
+#        xVertex.appendChild(xPosition)
+#        if isNormals:
+#            xNormal = xDoc.createElement("normal")
+#            xNormal.setAttribute("x", toFmtStr(normals[i][0]))
+#            xNormal.setAttribute("y", toFmtStr(normals[i][2]))
+#            xNormal.setAttribute("z", toFmtStr(-normals[i][1]))
+#            xVertex.appendChild(xNormal)
+#        if isTexCoordsSets:
+#            xUVSet = xDoc.createElement("texcoord")
+#            xUVSet.setAttribute("u", toFmtStr(uvSets[i][0][0])) # take only 1st set for now
+#            xUVSet.setAttribute("v", toFmtStr(1.0 - uvSets[i][0][1]))
+#            #xUVSet.setAttribute("v", str("%0.7f" % (1.0 - uvSets[i][0][1]))) #rounding
+#            xVertex.appendChild(xUVSet)
+#            
+#def xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry):
+#    
+#    xSubMeshes = xDoc.createElement("submeshes")
+#    xMesh.appendChild(xSubMeshes)
+#    
+#    for submesh in meshData['submeshes']:
+#        
+#        xSubMesh = xDoc.createElement("submesh")
+#        xSubMesh.setAttribute("material", submesh['material'])
+#        if hasSharedGeometry:
+#            xSubMesh.setAttribute("usesharedvertices", "true")
+#        else:
+#            xSubMesh.setAttribute("usesharedvertices", "false")
+#        xSubMesh.setAttribute("use32bitindexes", "false")   # TODO: not sure about this
+#        xSubMesh.setAttribute("operationtype", "triangle_list")  
+#        xSubMeshes.appendChild(xSubMesh)
+#        # write all faces
+#        if 'faces' in submesh:
+#            faces = submesh['faces']
+#            xFaces = xDoc.createElement("faces")
+#            xFaces.setAttribute("count", str(len(faces)))
+#            xSubMesh.appendChild(xFaces)
+#            for face in faces:
+#                xFace = xDoc.createElement("face")
+#                xFace.setAttribute("v1", str(face[0]))
+#                xFace.setAttribute("v2", str(face[1]))
+#                xFace.setAttribute("v3", str(face[2]))
+#                xFaces.appendChild(xFace)
+#        # if there is geometry per sub mesh
+#        if 'geometry' in submesh:
+#            geometry = submesh['geometry']
+#            xSaveGeometry(geometry, xDoc, xSubMesh, hasSharedGeometry)
+#    
+#def xSaveMeshData(meshData, filepath):    
+#    from xml.dom.minidom import Document
+#    
+#    hasSharedGeometry = False
+#    if 'sharedgeometry' in meshData:
+#        hasSharedGeometry = True
+#        
+#    # Create the minidom document
+#    xDoc = Document()
+#    
+#    xMesh = xDoc.createElement("mesh")
+#    xDoc.appendChild(xMesh)
+#    
+#    if hasSharedGeometry:
+#        geometry = meshData['sharedgeometry']
+#        xSaveGeometry(geometry, xDoc, xMesh, hasSharedGeometry)
+#    
+#    xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry)
+#   
+#    # Print our newly created XML    
+#    fileWr = open(filepath, 'w') 
+#    fileWr.write(xDoc.toprettyxml(indent="    ")) # 4 spaces
+#    #doc.writexml(fileWr, "  ")
+#    fileWr.close() 
+#
+#def bCollectMeshData(selectedObjects):
+#    meshData = {}
+#    subMeshesData = []
+#    for ob in selectedObjects:
+#        subMeshData = {}
+#        #ob = bpy.types.Object ##
+#        materialName = ob.name
+#        #mesh = bpy.types.Mesh ##
+#        mesh = ob.data     
+#        
+#        uvTex = []
+#        faces = []   
+#        fcs = mesh.faces    
+#        for f in fcs:
+#            #f = bpy.types.MeshFace ##
+#            oneFace = []
+#            for vertexIdx in f.vertices:
+#                oneFace.append(vertexIdx)
+#                
+#            faces.append(oneFace)
+#            
+#            faceUV=mesh.uv_textures[0].data[f.index]
+#            if len(f.vertices)>=3:
+#                uvTex.append([[faceUV.uv1[0], faceUV.uv1[1]]]) 
+#                uvTex.append([[faceUV.uv2[0], faceUV.uv2[1]]])
+#                uvTex.append([[faceUV.uv3[0], faceUV.uv3[1]]])
+#            if len(f.vertices)==4:
+#                uvTex.append([[faceUV.uv4[0], faceUV.uv4[1]]])                              
+#        
+#        # geometry
+#        geometry = {}
+#        #vertices = bpy.types.MeshVertices
+#        vertices = mesh.vertices
+#        normals = []
+#        positions = []
+#        
+#        for v in vertices:
+#            #v = bpy.types.MeshVertex ##
+#            #nr = bpy.types.Vec
+#            positions.append([v.co[0], v.co[1], v.co[2]])
+#            normals.append([v.normal[0],v.normal[1],v.normal[2]])        
+#        
+#        geometry['positions'] = positions
+#        geometry['normals'] = normals
+#        geometry['texcoordsets'] = len(mesh.uv_textures)
+#        geometry['uvsets'] = uvTex
+#        
+#        
+#        subMeshData['material'] = materialName
+#        subMeshData['faces'] = faces
+#        subMeshData['geometry'] = geometry
+#        subMeshesData.append(subMeshData)
+#        
+#    meshData['submeshes']=subMeshesData
+#    
+#    return meshData
                
 def CreateMesh(xml_doc, folder, name, materialFile):
 
@@ -441,33 +445,33 @@ def CreateMesh(xml_doc, folder, name, materialFile):
     for subOb in subObjs:
         subOb.select = True
     
-    # get mesh data from selected objects
-    selectedObjects = []
-    scn = bpy.context.scene
-    for ob in scn.objects:
-        if ob.select==True:
-            selectedObjects.append(ob)
-  
-    blenderMeshData = bCollectMeshData(selectedObjects)
+#    # get mesh data from selected objects
+#    selectedObjects = []
+#    scn = bpy.context.scene
+#    for ob in scn.objects:
+#        if ob.select==True:
+#            selectedObjects.append(ob)
+#  
+#    blenderMeshData = bCollectMeshData(selectedObjects)
+#    
+#    fileWr = open("D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_AAblex.MESH.xml", 'w') 
+#    fileWr.write(str(blenderMeshData))
+#    
+#    fileWr.close() 
+#    
+#    #print(blenderMeshData)
+#    xSaveMeshData(blenderMeshData, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_blex.MESH.xml")
+#    
     
-    fileWr = open("D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_AAblex.MESH.xml", 'w') 
-    fileWr.write(str(blenderMeshData))
-    
-    fileWr.close() 
-    
-    #print(blenderMeshData)
-    xSaveMeshData(blenderMeshData, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_blex.MESH.xml")
-    
-    
-    # TODO, need to retrieve meshData from blender
-    # TODO, place save code here for now    
-    fileWr = open("D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_AAex.MESH.xml", 'w') 
-    fileWr.write(str(meshData))
-    
-    fileWr.close() 
-    
-    xSaveMeshData(meshData, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_ex.MESH.xml")
-    
+#    # TODO, need to retrieve meshData from blender
+#    # TODO, place save code here for now    
+#    fileWr = open("D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_AAex.MESH.xml", 'w') 
+#    fileWr.write(str(meshData))
+#    
+#    fileWr.close() 
+#    
+#    xSaveMeshData(meshData, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_ex.MESH.xml")
+#    
     #xSaveMeshData(meshData, "D:\stuff\Torchlight_modding\org_models\Alchemist\Alchemist_ex.MESH.xml")
     #print(meshData)
     
@@ -494,11 +498,6 @@ def bCreateSubMeshes(meshData):
         else:
             geometry = meshData['sharedgeometry']            
           
-#        # transform raw data (Ogre) into Blender
-#        vertices = geometry['positions']      
-#        verts = []
-#        for vert in vertices:
-#            verts.append([vert[0], vert[1], vert[2]])
 
         verts = geometry['positions'] 
         faces = subMeshData['faces']     
@@ -512,8 +511,8 @@ def bCreateSubMeshes(meshData):
                 v.normal = Vector((normals[c][0],normals[c][1],normals[c][2]))
                 c+=1
         # smooth        
-#        for f in me.faces:
-#            f.use_smooth = True        
+        for f in me.faces:
+            f.use_smooth = True        
               
         # material for the submesh
         # Create image texture from image.         
@@ -555,12 +554,11 @@ def bCreateSubMeshes(meshData):
                         uvLayer.data[f.index].image=tex.image
                         uvLayer.data[f.index].use_image=True
                         
-        # vertex colors       
+        # this probably doesn't work
+        # vertex colors               
         if 'vertexcolors' in geometry:
-            me.vertex_colors = True
-        
-            vcolors = geometry['vertexcolors']
-        
+            me.vertex_colors = True        
+            vcolors = geometry['vertexcolors']        
             for f in me.faces:
                 for k,v in enumerate(f.v):
                     col = f.col[k]
@@ -586,7 +584,7 @@ def bCreateSubMeshes(meshData):
         
 
 def load(operator, context, filepath,       
-         ):
+         ogreXMLconverter=None,):
     
     print("loading...")
     print(str(filepath))
@@ -597,6 +595,16 @@ def load(operator, context, filepath,
     files = []
     materialFile = "None"
     
+    print(ogreXMLconverter)
+    if(ogreXMLconverter is not None):
+        # convert MESH and SKELETON file to MESH.XML and SKELETON.XML respectively
+        for filename in os.listdir(folder):
+            # we're going to do string comparisons. assume lower case to simplify code
+            filename = os.path.join(folder, filename.lower())
+            # process .mesh and .skeleton files while skipping .xml files
+            if (".mesh" in filename) and (".xml" not in filename):
+                os.system('%s "%s"' % (ogreXMLconverter, filename))
+            
     # get all the filenames in the chosen directory, put in list and sort it
     for filename in os.listdir(folder):
         # we're going to do string comparisons. assume lower case to simplify code
@@ -627,8 +635,8 @@ def load(operator, context, filepath,
             #CreateSkeleton(mesh_data, folder, name)
             CreateMesh(mesh_data, folder, name, materialFile)
     
-    print("done")
+    print("done.")
     return {'FINISHED'}
  
 #load(0, bpy.context, "D:\stuff\Torchlight_modding\org_models\Alchemist\Alchemist.MESH.xml")
-load(0, bpy.context, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03.MESH.xml")
+#load(0, bpy.context, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03.MESH.xml")

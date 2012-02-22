@@ -21,8 +21,8 @@
 """
 Name: 'OGRE for Torchlight (*.MESH)'
 Blender: 2.59
-Group: 'Import'
-Tooltip: 'Import Torchlight OGRE files'
+Group: 'Import/Export'
+Tooltip: 'Import/Export Torchlight OGRE mesh files'
     
 Author: Dusho
 """
@@ -43,8 +43,10 @@ Known issues:<br>
     * TODO
      
 History:<br>
+    * v0.3 (22-Feb-2012) - WIP - started cleaning + using OgreXMLConverter
+    * v0.2 (19-Feb-2012) - WIP - working export of geometry and faces
+    * v0.1 (18-Feb-2012) - initial 2.59 import code (from .xml)
     * v0.0 (12-Feb-2012) - file created
-    * v0.1 (18-Feb-2012) - got Blender add-on scheme working
 """
 
 bl_info = {
@@ -68,6 +70,8 @@ if "bpy" in locals():
     if "TLExport" in locals():
         imp.reload(TLExport)
 
+# Path for your OgreXmlConverter
+OGRE_XML_CONVERTER = "D:\stuff\Torchlight_modding\orge_tools\OgreXmlConverter.exe -q"
 
 import bpy
 from bpy.props import (BoolProperty,
@@ -91,7 +95,7 @@ class ImportTL(bpy.types.Operator, ImportHelper):
     filename_ext = ".mesh"
 #    
     filter_glob = StringProperty(
-            default="*.mesh;*.MESH",
+            default="*.mesh;*.MESH;.xml;.XML",
             options={'HIDDEN'},
             )
 
@@ -101,13 +105,13 @@ class ImportTL(bpy.types.Operator, ImportHelper):
         from . import TLImport
 
         keywords = self.as_keywords(ignore=("filter_glob",))
+        keywords["ogreXMLconverter"] = OGRE_XML_CONVERTER
 
         return TLImport.load(self, context, **keywords)
 
     def draw(self, context):
-        layout = self.layout
-       
-
+        layout = self.layout        
+        
 
 class ExportTL(bpy.types.Operator, ExportHelper):
     '''Export a Torchlight MESH File'''
@@ -117,8 +121,15 @@ class ExportTL(bpy.types.Operator, ExportHelper):
     bl_options = {'PRESET'}
 
     filename_ext = ".mesh"
+    
+    keep_xml = BoolProperty(
+            name="Keep XML",
+            description="Keeps the XML file when converting to .MESH",
+            default=False,
+            )
+
     filter_glob = StringProperty(
-            default="*.mesh;*.MESH",
+            default="*.mesh;*.MESH;.xml;.XML",
             options={'HIDDEN'},
             )
 #
@@ -128,16 +139,24 @@ class ExportTL(bpy.types.Operator, ExportHelper):
         from mathutils import Matrix
         
         keywords = self.as_keywords(ignore=("check_existing", "filter_glob"))
-               
+        keywords["ogreXMLconverter"] = OGRE_XML_CONVERTER
+      
         return TLExport.save(self, context, **keywords)       
 
 
+    def draw(self, context):
+        layout = self.layout
+        
+        row = layout.row(align=True)
+        row.prop(self, "keep_xml")
+
+
 def menu_func_import(self, context):
-    self.layout.operator(ImportTL.bl_idname, text="Torchlight (.mesh)")
+    self.layout.operator(ImportTL.bl_idname, text="Torchlight OGRE (.mesh)")
 
 
 def menu_func_export(self, context):
-    self.layout.operator(ExportTL.bl_idname, text="Torchlight (.mesh)")
+    self.layout.operator(ExportTL.bl_idname, text="Torchlight OGRE (.mesh)")
 
 
 def register():
