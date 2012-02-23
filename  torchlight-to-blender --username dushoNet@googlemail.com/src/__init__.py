@@ -93,6 +93,12 @@ class ImportTL(bpy.types.Operator, ImportHelper):
     bl_options = {'PRESET'}
 
     filename_ext = ".mesh"
+    
+    keep_xml = BoolProperty(
+            name="Keep XML",
+            description="Keeps the XML file when converting from .MESH",
+            default=False,
+            )
 #    
     filter_glob = StringProperty(
             default="*.mesh;*.MESH;.xml;.XML",
@@ -110,8 +116,9 @@ class ImportTL(bpy.types.Operator, ImportHelper):
         return TLImport.load(self, context, **keywords)
 
     def draw(self, context):
-        layout = self.layout        
-        
+        layout = self.layouts        
+        row = layout.row(align=True)
+        row.prop(self, "keep_xml")
 
 class ExportTL(bpy.types.Operator, ExportHelper):
     '''Export a Torchlight MESH File'''

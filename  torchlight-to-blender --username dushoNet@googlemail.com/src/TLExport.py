@@ -39,7 +39,8 @@ from mathutils import Vector, Matrix
 import os
 
 def toFmtStr(number):
-    return str("%0.7f" % number)
+    #return str("%0.7f" % number)
+    return str(round(number, 7))
 
 def xSaveGeometry(geometry, xDoc, xMesh, isShared):
     # I guess positions (vertices) must be there always
@@ -172,14 +173,36 @@ def bCollectMeshData(selectedObjects):
                 oneFace.append(vertexIdx)
                 
             faces.append(oneFace)
-            
-            faceUV=mesh.uv_textures[0].data[f.index]
-            if len(f.vertices)>=3:
-                uvTex.append([[faceUV.uv1[0], faceUV.uv1[1]]]) 
-                uvTex.append([[faceUV.uv2[0], faceUV.uv2[1]]])
-                uvTex.append([[faceUV.uv3[0], faceUV.uv3[1]]])
-            if len(f.vertices)==4:
-                uvTex.append([[faceUV.uv4[0], faceUV.uv4[1]]])                              
+            if mesh.uv_textures[0].data:
+                faceUV=mesh.uv_textures[0].data[f.index]
+                if len(f.vertices)>=3:
+                    uvTex.append([[faceUV.uv1[0], faceUV.uv1[1]]]) 
+                    uvTex.append([[faceUV.uv2[0], faceUV.uv2[1]]])
+                    uvTex.append([[faceUV.uv3[0], faceUV.uv3[1]]])
+                if len(f.vertices)==4:
+                    uvTex.append([[faceUV.uv4[0], faceUV.uv4[1]]])                              
+        
+#        uvOfVertex = {}
+#        if mesh.uv_textures.active:
+#            for layer in mesh.uv_textures:
+#                uvOfVertex[layer] = {}
+#                for fidx, uvface in enumerate(layer.data):
+#                    face = mesh.faces[ fidx ]
+#                    for vertex in face.vertices:
+#                        if vertex not in uvOfVertex[layer]:
+#                            uv = uvface.uv[ list(face.vertices).index(vertex) ]
+#                            uvOfVertex[layer][vertex] = [uv[0],uv[1]] 
+
+        uvOfVertex = {}
+        if mesh.uv_textures.active:
+            for layer in mesh.uv_textures:
+                uvOfVertex[layer] = {}
+                for fidx, uvface in enumerate(layer.data):
+                    face = mesh.faces[ fidx ]
+                    for vertex in face.vertices:
+                        if vertex not in uvOfVertex[layer]:
+                            uv = uvface.uv[ list(face.vertices).index(vertex) ]
+                            uvOfVertex[layer][vertex] = [uv[0],uv[1]] 
         
         # geometry
         geometry = {}
@@ -220,8 +243,9 @@ def SaveMesh(filepath):
   
     blenderMeshData = bCollectMeshData(selectedObjects)
     
+    dumpFile = filepath + "EDump"
     #fileWr = open("D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_AAblex.MESH.xml", 'w') 
-    fileWr = open(filepath, 'w')
+    fileWr = open(dumpFile, 'w')
     fileWr.write(str(blenderMeshData))
     
     fileWr.close() 
@@ -252,3 +276,5 @@ def save(operator, context, filepath,
     print("done.")
     
     return {'FINISHED'}
+
+#save(0, bpy.context, "D:\stuff\Torchlight_modding\org_models\box\box_t2.mesh.xml")

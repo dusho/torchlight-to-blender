@@ -429,7 +429,7 @@ def xCollectMaterialData(meshData, materialFile, folder):
 #    
 #    return meshData
                
-def CreateMesh(xml_doc, folder, name, materialFile):
+def CreateMesh(xml_doc, folder, name, materialFile, filepath):
 
     textures = 'None'
     print("collecting mesh data...")
@@ -462,16 +462,16 @@ def CreateMesh(xml_doc, folder, name, materialFile):
 #    #print(blenderMeshData)
 #    xSaveMeshData(blenderMeshData, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_blex.MESH.xml")
 #    
+    importDump = filepath + "IDump"
+    # TODO, need to retrieve meshData from blender
+    # TODO, place save code here for now    
+    fileWr = open(importDump, 'w') 
+    fileWr.write(str(meshData))
     
-#    # TODO, need to retrieve meshData from blender
-#    # TODO, place save code here for now    
-#    fileWr = open("D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_AAex.MESH.xml", 'w') 
-#    fileWr.write(str(meshData))
-#    
-#    fileWr.close() 
-#    
-#    xSaveMeshData(meshData, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_ex.MESH.xml")
-#    
+    fileWr.close() 
+    
+    #xSaveMeshData(meshData, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_ex.MESH.xml")
+    
     #xSaveMeshData(meshData, "D:\stuff\Torchlight_modding\org_models\Alchemist\Alchemist_ex.MESH.xml")
     #print(meshData)
     
@@ -584,7 +584,8 @@ def bCreateSubMeshes(meshData):
         
 
 def load(operator, context, filepath,       
-         ogreXMLconverter=None,):
+         ogreXMLconverter=None,
+         keep_xml=False,):
     
     print("loading...")
     print(str(filepath))
@@ -633,7 +634,10 @@ def load(operator, context, filepath,
         mesh_data = xOpenFile(filename)
         if mesh_data != "None":
             #CreateSkeleton(mesh_data, folder, name)
-            CreateMesh(mesh_data, folder, name, materialFile)
+            CreateMesh(mesh_data, folder, name, materialFile, filepath)
+            if not keep_xml:
+                # cleanup by deleting the XML file we created
+                os.unlink("%s" % filename)
     
     print("done.")
     return {'FINISHED'}
