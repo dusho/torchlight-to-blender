@@ -511,8 +511,8 @@ def bCreateSubMeshes(meshData):
                 v.normal = Vector((normals[c][0],normals[c][1],normals[c][2]))
                 c+=1
         # smooth        
-        for f in me.faces:
-            f.use_smooth = True        
+#        for f in me.faces:
+#            f.use_smooth = True        
               
         # material for the submesh
         # Create image texture from image.         

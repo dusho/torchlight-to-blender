@@ -170,17 +170,17 @@ def bCollectMeshData(selectedObjects):
             #f = bpy.types.MeshFace ##
             oneFace = []
             for vertexIdx in f.vertices:
-                oneFace.append(vertexIdx)
-                
+                oneFace.append(vertexIdx)                
             faces.append(oneFace)
-            if mesh.uv_textures[0].data:
-                faceUV=mesh.uv_textures[0].data[f.index]
-                if len(f.vertices)>=3:
-                    uvTex.append([[faceUV.uv1[0], faceUV.uv1[1]]]) 
-                    uvTex.append([[faceUV.uv2[0], faceUV.uv2[1]]])
-                    uvTex.append([[faceUV.uv3[0], faceUV.uv3[1]]])
-                if len(f.vertices)==4:
-                    uvTex.append([[faceUV.uv4[0], faceUV.uv4[1]]])                              
+            
+#            if mesh.uv_textures[0].data:
+#                faceUV=mesh.uv_textures[0].data[f.index]
+#                if len(f.vertices)>=3:
+#                    uvTex.append([[faceUV.uv1[0], faceUV.uv1[1]]]) 
+#                    uvTex.append([[faceUV.uv2[0], faceUV.uv2[1]]])
+#                    uvTex.append([[faceUV.uv3[0], faceUV.uv3[1]]])
+#                if len(f.vertices)==4:
+#                    uvTex.append([[faceUV.uv4[0], faceUV.uv4[1]]])                              
         
 #        uvOfVertex = {}
 #        if mesh.uv_textures.active:
@@ -193,16 +193,45 @@ def bCollectMeshData(selectedObjects):
 #                            uv = uvface.uv[ list(face.vertices).index(vertex) ]
 #                            uvOfVertex[layer][vertex] = [uv[0],uv[1]] 
 
-        uvOfVertex = {}
+        uvOfVertex = []
         if mesh.uv_textures.active:
             for layer in mesh.uv_textures:
-                uvOfVertex[layer] = {}
+                #uvOfVertex[laIdx] = {}
+                oneLayer = {}
                 for fidx, uvface in enumerate(layer.data):
                     face = mesh.faces[ fidx ]
+                    print("face: "+ str(fidx) + " indices [" + str(list(face.vertices))+ "]")
                     for vertex in face.vertices:
-                        if vertex not in uvOfVertex[layer]:
+                        if vertex not in oneLayer:
                             uv = uvface.uv[ list(face.vertices).index(vertex) ]
-                            uvOfVertex[layer][vertex] = [uv[0],uv[1]] 
+                            oneLayer[vertex] = [uv[0],uv[1]] 
+                            print("+vx: "+ str(vertex)+ " co: "+
+                                  "["+ str(mesh.vertices[vertex].co[0]) + ","+
+                                  str(mesh.vertices[vertex].co[1]) + ","+
+                                  str(mesh.vertices[vertex].co[2]) + "]" +
+                                   " uv: " + str([uv[0],uv[1]]))
+                        else :
+                            uv = uvface.uv[ list(face.vertices).index(vertex) ]
+                            print("-vx: "+ str(vertex)+ " co: "+
+                                  "["+ str(mesh.vertices[vertex].co[0]) + ","+
+                                  str(mesh.vertices[vertex].co[1]) + ","+
+                                  str(mesh.vertices[vertex].co[2]) + "]" +
+                                   " uv: " + str([uv[0],uv[1]]))
+                            #uvTex.append([[uv[0],uv[1]]])
+                uvOfVertex.append(oneLayer)
+       
+        print("uvOfVertex")                    
+        print(uvOfVertex)
+        
+#        if len(uvOfVertex)>0:
+#            for uvVx in uvOfVertex[0].values():
+#                uvTex.append([uvVx])
+        
+#        for vx, uuvv in enumerate(uvOfVertex[mesh.uv_textures[0]]):
+#            uvTex.append([uuvv[str(vx)]])
+        
+#        print("uvTex")    
+#        print(uvTex)
         
         # geometry
         geometry = {}
@@ -213,9 +242,12 @@ def bCollectMeshData(selectedObjects):
         
         for v in vertices:
             #v = bpy.types.MeshVertex ##
+            
             #nr = bpy.types.Vec
             positions.append([v.co[0], v.co[1], v.co[2]])
-            normals.append([v.normal[0],v.normal[1],v.normal[2]])        
+            normals.append([v.normal[0],v.normal[1],v.normal[2]]) 
+            if len(uvOfVertex)>0:  
+                uvTex.append([uvOfVertex[0][v.index]])     
         
         geometry['positions'] = positions
         geometry['normals'] = normals

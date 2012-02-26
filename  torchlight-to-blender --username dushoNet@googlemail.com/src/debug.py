@@ -27,4 +27,4 @@ def debug_load(self, context, filepath):
     TLImport.load(self, context, filepath, OGRE_XML_CONVERTER)
 
 debug_load(0, bpy.context, "D:/stuff/Torchlight_modding/org_models/box/box.MESH")   
-debug_save(0, bpy.context, "D:/stuff/Torchlight_modding/org_models/box/box_t4.MESH")   
+debug_save(0, bpy.context, "D:/stuff/Torchlight_modding/org_models/box/box_t5.MESH")   

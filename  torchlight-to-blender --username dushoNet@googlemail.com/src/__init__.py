@@ -116,7 +116,7 @@ class ImportTL(bpy.types.Operator, ImportHelper):
         return TLImport.load(self, context, **keywords)
 
     def draw(self, context):
-        layout = self.layouts        
+        layout = self.layout       
         row = layout.row(align=True)
         row.prop(self, "keep_xml")
 
@@ -132,7 +132,7 @@ class ExportTL(bpy.types.Operator, ExportHelper):
     keep_xml = BoolProperty(
             name="Keep XML",
             description="Keeps the XML file when converting to .MESH",
-            default=False,
+            default=True,   #TODO make default False for release
             )
 
     filter_glob = StringProperty(
