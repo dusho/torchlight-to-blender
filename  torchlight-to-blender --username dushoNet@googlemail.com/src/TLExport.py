@@ -38,6 +38,30 @@ from mathutils import Vector, Matrix
 #import math
 import os
 
+SHOW_EXPORT_DUMPS = True
+
+class VertexInfo(object):
+    def __init__(self, px,py,pz, nx,ny,nz, u,v):        
+        self.px = px
+        self.py = py
+        self.pz = pz
+        self.nx = nx
+        self.ny = ny
+        self.nz = nz        
+        self.u = u
+        self.v = v        
+        
+
+    '''does not compare ogre_vidx (and position at the moment) [ no need to compare position ]'''
+    def __eq__(self, o): 
+        if self.nx != o.nx or self.ny != o.ny or self.nz != o.nz: return False 
+        elif self.px != o.px or self.py != o.py or self.pz != o.pz: return False
+        elif self.u != o.u or self.v != o.v: return False
+        return True
+    
+#    def __hash__(self):
+#        return hash(self.px) ^ hash(self.py) ^ hash(self.pz) ^ hash(self.nx) ^ hash(self.ny) ^ hash(self.nz)
+#        
 def toFmtStr(number):
     #return str("%0.7f" % number)
     return str(round(number, 7))
@@ -91,16 +115,17 @@ def xSaveGeometry(geometry, xDoc, xMesh, isShared):
         if isTexCoordsSets:
             xUVSet = xDoc.createElement("texcoord")
             xUVSet.setAttribute("u", toFmtStr(uvSets[i][0][0])) # take only 1st set for now
-            xUVSet.setAttribute("v", toFmtStr(1.0 - uvSets[i][0][1]))
-            #xUVSet.setAttribute("v", str("%0.7f" % (1.0 - uvSets[i][0][1]))) #rounding
+            xUVSet.setAttribute("v", toFmtStr(1.0 - uvSets[i][0][1]))            
             xVertex.appendChild(xUVSet)
             
 def xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry):
-    
+            
     xSubMeshes = xDoc.createElement("submeshes")
     xMesh.appendChild(xSubMeshes)
     
     for submesh in meshData['submeshes']:
+                
+        numVerts = len(submesh['geometry']['positions'])
         
         xSubMesh = xDoc.createElement("submesh")
         xSubMesh.setAttribute("material", submesh['material'])
@@ -108,7 +133,7 @@ def xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry):
             xSubMesh.setAttribute("usesharedvertices", "true")
         else:
             xSubMesh.setAttribute("usesharedvertices", "false")
-        xSubMesh.setAttribute("use32bitindexes", "false")   # TODO: not sure about this
+        xSubMesh.setAttribute("use32bitindexes", str(bool(numVerts > 65535)))   
         xSubMesh.setAttribute("operationtype", "triangle_list")  
         xSubMeshes.appendChild(xSubMesh)
         # write all faces
@@ -153,6 +178,16 @@ def xSaveMeshData(meshData, filepath):
     #doc.writexml(fileWr, "  ")
     fileWr.close() 
 
+def getVertexIndex(vertexInfo, vertexList):
+    
+    for vIdx, vert in enumerate(vertexList):
+        if vertexInfo == vert:
+            return vIdx
+    
+    #not present in list:
+    vertexList.append(vertexInfo)
+    return len(vertexList)-1
+
 def bCollectMeshData(selectedObjects):
     meshData = {}
     subMeshesData = []
@@ -163,91 +198,62 @@ def bCollectMeshData(selectedObjects):
         #mesh = bpy.types.Mesh ##
         mesh = ob.data     
         
-        uvTex = []
-        faces = []   
-        fcs = mesh.faces    
-        for f in fcs:
-            #f = bpy.types.MeshFace ##
-            oneFace = []
-            for vertexIdx in f.vertices:
-                oneFace.append(vertexIdx)                
-            faces.append(oneFace)
-            
-#            if mesh.uv_textures[0].data:
-#                faceUV=mesh.uv_textures[0].data[f.index]
-#                if len(f.vertices)>=3:
-#                    uvTex.append([[faceUV.uv1[0], faceUV.uv1[1]]]) 
-#                    uvTex.append([[faceUV.uv2[0], faceUV.uv2[1]]])
-#                    uvTex.append([[faceUV.uv3[0], faceUV.uv3[1]]])
-#                if len(f.vertices)==4:
-#                    uvTex.append([[faceUV.uv4[0], faceUV.uv4[1]]])                              
-        
-#        uvOfVertex = {}
-#        if mesh.uv_textures.active:
-#            for layer in mesh.uv_textures:
-#                uvOfVertex[layer] = {}
-#                for fidx, uvface in enumerate(layer.data):
-#                    face = mesh.faces[ fidx ]
-#                    for vertex in face.vertices:
-#                        if vertex not in uvOfVertex[layer]:
-#                            uv = uvface.uv[ list(face.vertices).index(vertex) ]
-#                            uvOfVertex[layer][vertex] = [uv[0],uv[1]] 
-
-        uvOfVertex = []
+             
+        vertexList = []        
+        newFaces = []
         if mesh.uv_textures.active:
-            for layer in mesh.uv_textures:
-                #uvOfVertex[laIdx] = {}
+            for layer in mesh.uv_textures:                
                 oneLayer = {}
                 for fidx, uvface in enumerate(layer.data):
                     face = mesh.faces[ fidx ]
-                    print("face: "+ str(fidx) + " indices [" + str(list(face.vertices))+ "]")
+                    newFaceVx = []
+                    if SHOW_EXPORT_DUMPS:
+                        print("_face: "+ str(fidx) + " indices [" + str(list(face.vertices))+ "]")
                     for vertex in face.vertices:
-                        if vertex not in oneLayer:
-                            uv = uvface.uv[ list(face.vertices).index(vertex) ]
-                            oneLayer[vertex] = [uv[0],uv[1]] 
-                            print("+vx: "+ str(vertex)+ " co: "+
-                                  "["+ str(mesh.vertices[vertex].co[0]) + ","+
-                                  str(mesh.vertices[vertex].co[1]) + ","+
-                                  str(mesh.vertices[vertex].co[2]) + "]" +
-                                   " uv: " + str([uv[0],uv[1]]))
-                        else :
-                            uv = uvface.uv[ list(face.vertices).index(vertex) ]
-                            print("-vx: "+ str(vertex)+ " co: "+
-                                  "["+ str(mesh.vertices[vertex].co[0]) + ","+
-                                  str(mesh.vertices[vertex].co[1]) + ","+
-                                  str(mesh.vertices[vertex].co[2]) + "]" +
-                                   " uv: " + str([uv[0],uv[1]]))
-                            #uvTex.append([[uv[0],uv[1]]])
-                uvOfVertex.append(oneLayer)
-       
-        print("uvOfVertex")                    
-        print(uvOfVertex)
-        
-#        if len(uvOfVertex)>0:
-#            for uvVx in uvOfVertex[0].values():
-#                uvTex.append([uvVx])
-        
-#        for vx, uuvv in enumerate(uvOfVertex[mesh.uv_textures[0]]):
-#            uvTex.append([uuvv[str(vx)]])
-        
-#        print("uvTex")    
-#        print(uvTex)
-        
+                        vxOb = mesh.vertices[vertex]
+                        uv = uvface.uv[ list(face.vertices).index(vertex) ]
+                        px = vxOb.co[0]
+                        py = vxOb.co[1]
+                        pz = vxOb.co[2]
+                        nx = vxOb.normal[0] 
+                        ny = vxOb.normal[1]
+                        nz = vxOb.normal[2]                        
+                        u = uv[0]
+                        v = uv[1]
+                        if SHOW_EXPORT_DUMPS:
+                            print("_vx: "+ str(vertex)+ " co: "+ str([px,py,pz]) +
+                                  " no: " + str([nx,ny,nz]) +
+                                  " uv: " + str([u,v]))
+                        vert = VertexInfo(px,py,pz,nx,ny,nz,u,v)
+                        newVxIdx = getVertexIndex(vert, vertexDic, vertexList)
+                        newFaceVx.append(newVxIdx)
+                        if SHOW_EXPORT_DUMPS:
+                            print("Nvx: "+ str(newVxIdx)+ " co: "+ str([px,py,pz]) +
+                                  " no: " + str([nx,ny,nz]) +
+                                  " uv: " + str([u,v]))
+                    newFaces.append(newFaceVx)
+                    if SHOW_EXPORT_DUMPS:
+                        print("Nface: "+ str(fidx) + " indices [" + str(list(newFaceVx))+ "]")
+                          
         # geometry
         geometry = {}
         #vertices = bpy.types.MeshVertices
-        vertices = mesh.vertices
+        #vertices = mesh.vertices
+        faces = [] 
         normals = []
         positions = []
+        uvTex = []
         
-        for v in vertices:
-            #v = bpy.types.MeshVertex ##
-            
-            #nr = bpy.types.Vec
-            positions.append([v.co[0], v.co[1], v.co[2]])
-            normals.append([v.normal[0],v.normal[1],v.normal[2]]) 
-            if len(uvOfVertex)>0:  
-                uvTex.append([uvOfVertex[0][v.index]])     
+        faces = newFaces
+        
+        for vxInfo in vertexList:
+            positions.append([vxInfo.px, vxInfo.py, vxInfo.pz])
+            normals.append([vxInfo.nx, vxInfo.ny, vxInfo.nz])
+            uvTex.append([[vxInfo.u, vxInfo.v]])
+        
+        if SHOW_EXPORT_DUMPS:
+            print("uvTex")
+            print(uvTex)
         
         geometry['positions'] = positions
         geometry['normals'] = normals
@@ -275,17 +281,14 @@ def SaveMesh(filepath):
   
     blenderMeshData = bCollectMeshData(selectedObjects)
     
-    dumpFile = filepath + "EDump"
-    #fileWr = open("D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_AAblex.MESH.xml", 'w') 
-    fileWr = open(dumpFile, 'w')
-    fileWr.write(str(blenderMeshData))
+    if SHOW_EXPORT_DUMPS:
+        dumpFile = filepath + "EDump"    
+        fileWr = open(dumpFile, 'w')
+        fileWr.write(str(blenderMeshData))    
+        fileWr.close() 
     
-    fileWr.close() 
-    
-    #print(blenderMeshData)
     xSaveMeshData(blenderMeshData, filepath)
-    #xSaveMeshData(blenderMeshData, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03_blex.MESH.xml")
-    
+     
 
 def save(operator, context, filepath,       
          ogreXMLconverter=None,
