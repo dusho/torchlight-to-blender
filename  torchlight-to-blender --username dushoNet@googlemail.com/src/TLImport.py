@@ -289,7 +289,7 @@ def CreateMesh(xml_doc, folder, name, materialFile, filepath):
 #  
 
 
-    if SHOW_IMPORT_DUMP:
+    if SHOW_IMPORT_DUMPS:
         importDump = filepath + "IDump"  
         fileWr = open(importDump, 'w') 
         fileWr.write(str(meshData))    
@@ -332,16 +332,18 @@ def bCreateSubMeshes(meshData):
                 v.normal = Vector((normals[c][0],normals[c][1],normals[c][2]))
                 c+=1
         # smooth        
-#        for f in me.faces:
-#            f.use_smooth = True        
+        
+        for f in me.faces:
+            f.use_smooth = True        
               
         # material for the submesh
         # Create image texture from image.         
         if subMeshName in meshData['materials']:
             realpath = meshData['materials'][subMeshName] # texture path
-            tex = bpy.data.textures.new('ColorTex', type = 'IMAGE')
-            tex.image = bpy.data.images.load(realpath)
-            tex.use_alpha = True
+            if realpath:
+                tex = bpy.data.textures.new('ColorTex', type = 'IMAGE')
+                tex.image = bpy.data.images.load(realpath)
+                tex.use_alpha = True
          
         # Create shadeless material and MTex
         mat = bpy.data.materials.new('TexMat')
@@ -389,6 +391,9 @@ def bCreateSubMeshes(meshData):
                     col.b = int(vcol[2]*255)
                     col.a = int(vcol[3]*255)
         
+        bpy.ops.object.editmode_toggle()
+        bpy.ops.mesh.faces_shade_smooth()
+        bpy.ops.object.editmode_toggle()
         # Update mesh with new data
         me.update(calc_edges=True)
         

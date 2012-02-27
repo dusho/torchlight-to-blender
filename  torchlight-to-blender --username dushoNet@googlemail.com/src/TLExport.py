@@ -198,7 +198,9 @@ def bCollectMeshData(selectedObjects):
         #mesh = bpy.types.Mesh ##
         mesh = ob.data     
         
-             
+        # TODO: if there are on UV data, no geometry is found
+        # depending on UV data presence, need to loop through mesh.faces
+        # does mesh.faces contains all faces?    
         vertexList = []        
         newFaces = []
         if mesh.uv_textures.active:
@@ -206,34 +208,39 @@ def bCollectMeshData(selectedObjects):
                 oneLayer = {}
                 for fidx, uvface in enumerate(layer.data):
                     face = mesh.faces[ fidx ]
-                    newFaceVx = []
+                    tris = []
+                    tris.append( (face.vertices[0], face.vertices[1], face.vertices[2]) )
+                    if(len(face.vertices)>=4):
+                        tris.append( (face.vertices[0], face.vertices[2], face.vertices[3]) ) 
                     if SHOW_EXPORT_DUMPS:
-                        print("_face: "+ str(fidx) + " indices [" + str(list(face.vertices))+ "]")
-                    for vertex in face.vertices:
-                        vxOb = mesh.vertices[vertex]
-                        uv = uvface.uv[ list(face.vertices).index(vertex) ]
-                        px = vxOb.co[0]
-                        py = vxOb.co[1]
-                        pz = vxOb.co[2]
-                        nx = vxOb.normal[0] 
-                        ny = vxOb.normal[1]
-                        nz = vxOb.normal[2]                        
-                        u = uv[0]
-                        v = uv[1]
+                            print("_face: "+ str(fidx) + " indices [" + str(list(face.vertices))+ "]")
+                    for tri in tris:
+                        newFaceVx = []                        
+                        for vertex in tri:
+                            vxOb = mesh.vertices[vertex]
+                            uv = uvface.uv[ list(tri).index(vertex) ]
+                            px = vxOb.co[0]
+                            py = vxOb.co[1]
+                            pz = vxOb.co[2]
+                            nx = vxOb.normal[0] 
+                            ny = vxOb.normal[1]
+                            nz = vxOb.normal[2]                        
+                            u = uv[0]
+                            v = uv[1]
+                            if SHOW_EXPORT_DUMPS:
+                                print("_vx: "+ str(vertex)+ " co: "+ str([px,py,pz]) +
+                                      " no: " + str([nx,ny,nz]) +
+                                      " uv: " + str([u,v]))
+                            vert = VertexInfo(px,py,pz,nx,ny,nz,u,v)
+                            newVxIdx = getVertexIndex(vert, vertexList)
+                            newFaceVx.append(newVxIdx)
+                            if SHOW_EXPORT_DUMPS:
+                                print("Nvx: "+ str(newVxIdx)+ " co: "+ str([px,py,pz]) +
+                                      " no: " + str([nx,ny,nz]) +
+                                      " uv: " + str([u,v]))
+                        newFaces.append(newFaceVx)
                         if SHOW_EXPORT_DUMPS:
-                            print("_vx: "+ str(vertex)+ " co: "+ str([px,py,pz]) +
-                                  " no: " + str([nx,ny,nz]) +
-                                  " uv: " + str([u,v]))
-                        vert = VertexInfo(px,py,pz,nx,ny,nz,u,v)
-                        newVxIdx = getVertexIndex(vert, vertexDic, vertexList)
-                        newFaceVx.append(newVxIdx)
-                        if SHOW_EXPORT_DUMPS:
-                            print("Nvx: "+ str(newVxIdx)+ " co: "+ str([px,py,pz]) +
-                                  " no: " + str([nx,ny,nz]) +
-                                  " uv: " + str([u,v]))
-                    newFaces.append(newFaceVx)
-                    if SHOW_EXPORT_DUMPS:
-                        print("Nface: "+ str(fidx) + " indices [" + str(list(newFaceVx))+ "]")
+                            print("Nface: "+ str(fidx) + " indices [" + str(list(newFaceVx))+ "]")
                           
         # geometry
         geometry = {}
