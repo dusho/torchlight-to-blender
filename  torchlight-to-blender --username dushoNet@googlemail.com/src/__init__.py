@@ -20,7 +20,7 @@
 
 """
 Name: 'OGRE for Torchlight (*.MESH)'
-Blender: 2.59
+Blender: 2.59 and 2.62
 Group: 'Import/Export'
 Tooltip: 'Import/Export Torchlight OGRE mesh files'
     
@@ -28,21 +28,26 @@ Author: Dusho
 """
 
 __author__ = "Dusho"
-__version__ = "0.0 12-Feb-2012"
+__version__ = "0.4 28-Feb-2012"
 
 __bpydoc__ = """\
 This script imports Torchlight Ogre models into Blender.
 
 Supported:<br>
-    * TODO
+    * import/export of basic meshes
 
-Missing:<br>    
-    * TODO
+Missing:<br>   
+    * vertex weights
+    * skeletons
+    * animations
+    * material export
+    * vertex color import/export
 
 Known issues:<br>
-    * TODO
+    * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
      
 History:<br>
+    * v0.4 (28-Feb-2012) - fixing export when no UV data are present
     * v0.3 (22-Feb-2012) - WIP - started cleaning + using OgreXMLConverter
     * v0.2 (19-Feb-2012) - WIP - working export of geometry and faces
     * v0.1 (18-Feb-2012) - initial 2.59 import code (from .xml)
@@ -71,7 +76,7 @@ if "bpy" in locals():
         imp.reload(TLExport)
 
 # Path for your OgreXmlConverter
-OGRE_XML_CONVERTER = "D:\stuff\Torchlight_modding\orge_tools\OgreXmlConverter.exe -q"
+OGRE_XML_CONVERTER = "D:\stuff\Torchlight_modding\orge_tools\OgreXmlConverter.exe"
 
 import bpy
 from bpy.props import (BoolProperty,
@@ -111,7 +116,7 @@ class ImportTL(bpy.types.Operator, ImportHelper):
         from . import TLImport
 
         keywords = self.as_keywords(ignore=("filter_glob",))
-        keywords["ogreXMLconverter"] = OGRE_XML_CONVERTER
+        keywords["ogreXMLconverter"] = OGRE_XML_CONVERTER + "-q"
 
         return TLImport.load(self, context, **keywords)
 
@@ -146,7 +151,7 @@ class ExportTL(bpy.types.Operator, ExportHelper):
         from mathutils import Matrix
         
         keywords = self.as_keywords(ignore=("check_existing", "filter_glob"))
-        keywords["ogreXMLconverter"] = OGRE_XML_CONVERTER
+        keywords["ogreXMLconverter"] = OGRE_XML_CONVERTER + "-q"
       
         return TLExport.save(self, context, **keywords)       
 

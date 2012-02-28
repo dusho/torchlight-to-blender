@@ -2,29 +2,34 @@
 
 """
 Name: 'OGRE for Torchlight (*.MESH)'
-Blender: 2.59
-Group: 'Export'
-Tooltip: 'Export Torchlight OGRE files'
+Blender: 2.59 and 2.62
+Group: 'Import/Export'
+Tooltip: 'Import/Export Torchlight OGRE mesh files'
     
 Author: Dusho
 """
 
 __author__ = "Dusho"
-__version__ = "0.3 22-Feb-2012"
+__version__ = "0.4 28-Feb-2012"
 
 __bpydoc__ = """\
-This script exports Torchlight Ogre models from Blender.
+This script imports Torchlight Ogre models into Blender.
 
 Supported:<br>
-    * TODO
+    * import/export of basic meshes
 
-Missing:<br>    
-    * TODO
+Missing:<br>   
+    * vertex weights
+    * skeletons
+    * animations
+    * material export
+    * vertex color import/export
 
 Known issues:<br>
-    * TODO
+    * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
      
 History:<br>
+    * v0.4 (28-Feb-2012) - fixing export when no UV data are present
     * v0.3 (22-Feb-2012) - WIP - started cleaning + using OgreXMLConverter
     * v0.2 (19-Feb-2012) - WIP - working export of geometry and faces
     * v0.1 (18-Feb-2012) - initial 2.59 import code (from .xml)
@@ -81,7 +86,8 @@ def xSaveGeometry(geometry, xDoc, xMesh, isShared):
         normals = geometry['normals']
         
     isTexCoordsSets = False
-    if 'texcoordsets' in geometry:
+    texCoordSets = geometry['texcoordsets']
+    if texCoordSets>0 and 'uvsets' in geometry:
         isTexCoordsSets = True
         uvSets = geometry['uvsets']
     
@@ -95,7 +101,7 @@ def xSaveGeometry(geometry, xDoc, xMesh, isShared):
         xVertexBuffer.setAttribute("normals", "true")
     if isTexCoordsSets:
         xVertexBuffer.setAttribute("texture_coord_dimensions_0", "2")
-        xVertexBuffer.setAttribute("texture_coords", "1")
+        xVertexBuffer.setAttribute("texture_coords", str(texCoordSets))
     xGeometry.appendChild(xVertexBuffer)
     
     for i, vx in enumerate(vertices):
@@ -198,50 +204,60 @@ def bCollectMeshData(selectedObjects):
         #mesh = bpy.types.Mesh ##
         mesh = ob.data     
         
-        # TODO: if there are on UV data, no geometry is found
-        # depending on UV data presence, need to loop through mesh.faces
-        # does mesh.faces contains all faces?    
+        # first try to collect UV data
+        uvData = []
+        hasUVData = False
+        if mesh.uv_textures.active:
+            hasUVData = True
+            #uvLayerTofaceUVdata = {}
+            for layer in mesh.uv_textures:
+                faceIdxToUVdata = {}
+                for fidx, uvface in enumerate(layer.data):               
+                    faceIdxToUVdata[fidx] = uvface.uv
+                #uvData[layer]=faceIdxToUVdata
+                uvData.append(faceIdxToUVdata)
+                      
         vertexList = []        
         newFaces = []
-        if mesh.uv_textures.active:
-            for layer in mesh.uv_textures:                
-                oneLayer = {}
-                for fidx, uvface in enumerate(layer.data):
-                    face = mesh.faces[ fidx ]
-                    tris = []
-                    tris.append( (face.vertices[0], face.vertices[1], face.vertices[2]) )
-                    if(len(face.vertices)>=4):
-                        tris.append( (face.vertices[0], face.vertices[2], face.vertices[3]) ) 
+                
+        for fidx, face in enumerate(mesh.faces):
+            tris = []
+            tris.append( (face.vertices[0], face.vertices[1], face.vertices[2]) )
+            if(len(face.vertices)>=4):
+                tris.append( (face.vertices[0], face.vertices[2], face.vertices[3]) ) 
+            if SHOW_EXPORT_DUMPS:
+                    print("_face: "+ str(fidx) + " indices [" + str(list(face.vertices))+ "]")
+            for tri in tris:
+                newFaceVx = []                        
+                for vertex in tri:
+                    vxOb = mesh.vertices[vertex]
+                    u = 0
+                    v = 0
+                    if hasUVData:
+                        uv = uvData[0][fidx][ list(tri).index(vertex) ] #take 1st layer only
+                        u = uv[0]
+                        v = uv[1]
+                    px = vxOb.co[0]
+                    py = vxOb.co[1]
+                    pz = vxOb.co[2]
+                    nx = vxOb.normal[0] 
+                    ny = vxOb.normal[1]
+                    nz = vxOb.normal[2]                     
                     if SHOW_EXPORT_DUMPS:
-                            print("_face: "+ str(fidx) + " indices [" + str(list(face.vertices))+ "]")
-                    for tri in tris:
-                        newFaceVx = []                        
-                        for vertex in tri:
-                            vxOb = mesh.vertices[vertex]
-                            uv = uvface.uv[ list(tri).index(vertex) ]
-                            px = vxOb.co[0]
-                            py = vxOb.co[1]
-                            pz = vxOb.co[2]
-                            nx = vxOb.normal[0] 
-                            ny = vxOb.normal[1]
-                            nz = vxOb.normal[2]                        
-                            u = uv[0]
-                            v = uv[1]
-                            if SHOW_EXPORT_DUMPS:
-                                print("_vx: "+ str(vertex)+ " co: "+ str([px,py,pz]) +
-                                      " no: " + str([nx,ny,nz]) +
-                                      " uv: " + str([u,v]))
-                            vert = VertexInfo(px,py,pz,nx,ny,nz,u,v)
-                            newVxIdx = getVertexIndex(vert, vertexList)
-                            newFaceVx.append(newVxIdx)
-                            if SHOW_EXPORT_DUMPS:
-                                print("Nvx: "+ str(newVxIdx)+ " co: "+ str([px,py,pz]) +
-                                      " no: " + str([nx,ny,nz]) +
-                                      " uv: " + str([u,v]))
-                        newFaces.append(newFaceVx)
-                        if SHOW_EXPORT_DUMPS:
-                            print("Nface: "+ str(fidx) + " indices [" + str(list(newFaceVx))+ "]")
-                          
+                        print("_vx: "+ str(vertex)+ " co: "+ str([px,py,pz]) +
+                              " no: " + str([nx,ny,nz]) +
+                              " uv: " + str([u,v]))
+                    vert = VertexInfo(px,py,pz,nx,ny,nz,u,v)
+                    newVxIdx = getVertexIndex(vert, vertexList)
+                    newFaceVx.append(newVxIdx)
+                    if SHOW_EXPORT_DUMPS:
+                        print("Nvx: "+ str(newVxIdx)+ " co: "+ str([px,py,pz]) +
+                              " no: " + str([nx,ny,nz]) +
+                              " uv: " + str([u,v]))
+                newFaces.append(newFaceVx)
+                if SHOW_EXPORT_DUMPS:
+                    print("Nface: "+ str(fidx) + " indices [" + str(list(newFaceVx))+ "]")
+                  
         # geometry
         geometry = {}
         #vertices = bpy.types.MeshVertices
@@ -265,7 +281,9 @@ def bCollectMeshData(selectedObjects):
         geometry['positions'] = positions
         geometry['normals'] = normals
         geometry['texcoordsets'] = len(mesh.uv_textures)
-        geometry['uvsets'] = uvTex
+        print("texcoordsets: " + str(len(mesh.uv_textures)))
+        if hasUVData:
+            geometry['uvsets'] = uvTex
         
         
         subMeshData['material'] = materialName
@@ -279,12 +297,19 @@ def bCollectMeshData(selectedObjects):
 
 def SaveMesh(filepath):
     
+    # go to the object mode
+    for ob in bpy.data.objects: 
+        bpy.ops.object.mode_set(mode='OBJECT')
+            
     # get mesh data from selected objects
     selectedObjects = []
     scn = bpy.context.scene
     for ob in scn.objects:
         if ob.select==True:
             selectedObjects.append(ob)
+    
+    if len(selectedObjects)==0:
+        return -1
   
     blenderMeshData = bCollectMeshData(selectedObjects)
     
@@ -295,7 +320,8 @@ def SaveMesh(filepath):
         fileWr.close() 
     
     xSaveMeshData(blenderMeshData, filepath)
-     
+    
+    return 1
 
 def save(operator, context, filepath,       
          ogreXMLconverter=None,
@@ -305,7 +331,11 @@ def save(operator, context, filepath,
     print(str(filepath))
     
     xmlFilepath = filepath + ".xml"
-    SaveMesh(xmlFilepath)
+    result = SaveMesh(xmlFilepath)
+    
+    if result<0:
+        print("No objects selected for export.")
+        return ('CANCELLED')
     
     if(ogreXMLconverter is not None):
         # use Ogre XML converter  xml -> binary mesh

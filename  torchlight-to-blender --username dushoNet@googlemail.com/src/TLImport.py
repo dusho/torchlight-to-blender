@@ -2,29 +2,34 @@
 
 """
 Name: 'OGRE for Torchlight (*.MESH)'
-Blender: 2.59
-Group: 'Import'
-Tooltip: 'Import Torchlight OGRE files'
+Blender: 2.59 and 2.62
+Group: 'Import/Export'
+Tooltip: 'Import/Export Torchlight OGRE mesh files'
     
 Author: Dusho
 """
 
 __author__ = "Dusho"
-__version__ = "0.3 22-Feb-2012"
+__version__ = "0.4 28-Feb-2012"
 
 __bpydoc__ = """\
 This script imports Torchlight Ogre models into Blender.
 
 Supported:<br>
-    * TODO
+    * import/export of basic meshes
 
-Missing:<br>    
-    * TODO
+Missing:<br>   
+    * vertex weights
+    * skeletons
+    * animations
+    * material export
+    * vertex color import/export
 
 Known issues:<br>
-    * TODO
+    * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
      
 History:<br>
+    * v0.4 (28-Feb-2012) - fixing export when no UV data are present
     * v0.3 (22-Feb-2012) - WIP - started cleaning + using OgreXMLConverter
     * v0.2 (19-Feb-2012) - WIP - working export of geometry and faces
     * v0.1 (18-Feb-2012) - initial 2.59 import code (from .xml)
@@ -375,7 +380,7 @@ def bCreateSubMeshes(meshData):
                         uvLayer.data[f.index].uv = (uvco1,uvco2,uvco3)
                         # this will link image to faces
                         uvLayer.data[f.index].image=tex.image
-                        uvLayer.data[f.index].use_image=True
+                        #uvLayer.data[f.index].use_image=True
                         
         # this probably doesn't work
         # vertex colors               
