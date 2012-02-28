@@ -43,7 +43,7 @@ from mathutils import Vector, Matrix
 #import math
 import os
 
-SHOW_EXPORT_DUMPS = True
+SHOW_EXPORT_DUMPS = False
 
 class VertexInfo(object):
     def __init__(self, px,py,pz, nx,ny,nz, u,v):        

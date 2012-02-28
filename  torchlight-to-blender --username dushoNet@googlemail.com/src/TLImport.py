@@ -64,7 +64,9 @@ from mathutils import Vector, Matrix
 #import math
 import os
 
-SHOW_IMPORT_DUMPS = True
+SHOW_IMPORT_DUMPS = False
+# default blender version of script
+blender_version = 259
 
 #ogreXMLconverter=None
 
@@ -72,19 +74,26 @@ SHOW_IMPORT_DUMPS = True
 # also keeps after name (as Torchlight uses names to identify types -boots, chest, ...- with names)
 # TODO: this is not needed for Blender 2.62 and above
 def GetValidBlenderName(name):
+    
+    global blender_version
+    
+    maxChars = 20
+    if blender_version>262:
+        maxChars = 63
+    
     newname = name    
-    if(len(name) > 20):
+    if(len(name) > maxChars):
         if(name.find("/") >= 0):
             if(name.find("Material") >= 0):
                 # replace 'Material' string with only 'Mt'
                 newname = name.replace("Material","Mt")
             # check if it's still above 20
-            if(len(newname) > 20):
+            if(len(newname) > maxChars):
                 suffix = newname[newname.find("/"):]
-                prefix = newname[0:(21-len(suffix))]
+                prefix = newname[0:(maxChars+1-len(suffix))]
                 newname = prefix + suffix
         else:
-            newname = name[0:21]            
+            newname = name[0:maxChars+1]            
     if(newname!=name):
         print("WARNING: Name truncated (" + name + " -> " + newname + ")")
             
@@ -418,6 +427,10 @@ def load(operator, context, filepath,
          ogreXMLconverter=None,
          keep_xml=False,):
     
+    global blender_version
+    
+    blender_version = bpy.app.version[0]*100 + bpy.app.version[1]
+        
     print("loading...")
     print(str(filepath))
     

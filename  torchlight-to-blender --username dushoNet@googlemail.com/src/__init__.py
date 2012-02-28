@@ -116,7 +116,7 @@ class ImportTL(bpy.types.Operator, ImportHelper):
         from . import TLImport
 
         keywords = self.as_keywords(ignore=("filter_glob",))
-        keywords["ogreXMLconverter"] = OGRE_XML_CONVERTER + "-q"
+        keywords["ogreXMLconverter"] = OGRE_XML_CONVERTER + " -q"
 
         return TLImport.load(self, context, **keywords)
 
@@ -137,7 +137,7 @@ class ExportTL(bpy.types.Operator, ExportHelper):
     keep_xml = BoolProperty(
             name="Keep XML",
             description="Keeps the XML file when converting to .MESH",
-            default=True,   #TODO make default False for release
+            default=False,   #TODO make default False for release
             )
 
     filter_glob = StringProperty(
@@ -151,7 +151,7 @@ class ExportTL(bpy.types.Operator, ExportHelper):
         from mathutils import Matrix
         
         keywords = self.as_keywords(ignore=("check_existing", "filter_glob"))
-        keywords["ogreXMLconverter"] = OGRE_XML_CONVERTER + "-q"
+        keywords["ogreXMLconverter"] = OGRE_XML_CONVERTER + " -q"
       
         return TLExport.save(self, context, **keywords)       
 
