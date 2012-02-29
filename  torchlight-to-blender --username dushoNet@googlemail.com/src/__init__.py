@@ -28,7 +28,7 @@ Author: Dusho
 """
 
 __author__ = "Dusho"
-__version__ = "0.4 28-Feb-2012"
+__version__ = "0.4.1 29-Feb-2012"
 
 __bpydoc__ = """\
 This script imports Torchlight Ogre models into Blender.
@@ -47,11 +47,12 @@ Known issues:<br>
     * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
      
 History:<br>
-    * v0.4 (28-Feb-2012) - fixing export when no UV data are present
-    * v0.3 (22-Feb-2012) - WIP - started cleaning + using OgreXMLConverter
-    * v0.2 (19-Feb-2012) - WIP - working export of geometry and faces
-    * v0.1 (18-Feb-2012) - initial 2.59 import code (from .xml)
-    * v0.0 (12-Feb-2012) - file created
+    * v0.4.1   (29-Feb-2012) - flag for applying transformation, default=true
+    * v0.4     (28-Feb-2012) - fixing export when no UV data are present
+    * v0.3     (22-Feb-2012) - WIP - started cleaning + using OgreXMLConverter
+    * v0.2     (19-Feb-2012) - WIP - working export of geometry and faces
+    * v0.1     (18-Feb-2012) - initial 2.59 import code (from .xml)
+    * v0.0     (12-Feb-2012) - file created
 """
 
 bl_info = {
@@ -139,6 +140,12 @@ class ExportTL(bpy.types.Operator, ExportHelper):
             description="Keeps the XML file when converting to .MESH",
             default=False,   #TODO make default False for release
             )
+    
+    apply_transform = BoolProperty(
+            name="Apply Transform",
+            description="Applies object's transformation to its data",
+            default=True,   #TODO make default False for release
+            )
 
     filter_glob = StringProperty(
             default="*.mesh;*.MESH;.xml;.XML",
@@ -161,6 +168,9 @@ class ExportTL(bpy.types.Operator, ExportHelper):
         
         row = layout.row(align=True)
         row.prop(self, "keep_xml")
+        
+        row = layout.row(align=True)
+        row.prop(self, "apply_transform")
 
 
 def menu_func_import(self, context):

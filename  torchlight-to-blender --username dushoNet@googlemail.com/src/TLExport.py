@@ -10,7 +10,7 @@ Author: Dusho
 """
 
 __author__ = "Dusho"
-__version__ = "0.4 28-Feb-2012"
+__version__ = "0.4.1 29-Feb-2012"
 
 __bpydoc__ = """\
 This script imports Torchlight Ogre models into Blender.
@@ -29,11 +29,12 @@ Known issues:<br>
     * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
      
 History:<br>
-    * v0.4 (28-Feb-2012) - fixing export when no UV data are present
-    * v0.3 (22-Feb-2012) - WIP - started cleaning + using OgreXMLConverter
-    * v0.2 (19-Feb-2012) - WIP - working export of geometry and faces
-    * v0.1 (18-Feb-2012) - initial 2.59 import code (from .xml)
-    * v0.0 (12-Feb-2012) - file created
+    * v0.4.1   (29-Feb-2012) - flag for applying transformation, default=true
+    * v0.4     (28-Feb-2012) - fixing export when no UV data are present
+    * v0.3     (22-Feb-2012) - WIP - started cleaning + using OgreXMLConverter
+    * v0.2     (19-Feb-2012) - WIP - working export of geometry and faces
+    * v0.1     (18-Feb-2012) - initial 2.59 import code (from .xml)
+    * v0.0     (12-Feb-2012) - file created
 """
 
 #from Blender import *
@@ -295,22 +296,9 @@ def bCollectMeshData(selectedObjects):
     
     return meshData
 
-def SaveMesh(filepath):
+def SaveMesh(filepath, selectedObjects):
     
-    # go to the object mode
-    for ob in bpy.data.objects: 
-        bpy.ops.object.mode_set(mode='OBJECT')
-            
-    # get mesh data from selected objects
-    selectedObjects = []
-    scn = bpy.context.scene
-    for ob in scn.objects:
-        if ob.select==True:
-            selectedObjects.append(ob)
-    
-    if len(selectedObjects)==0:
-        return -1
-  
+     
     blenderMeshData = bCollectMeshData(selectedObjects)
     
     if SHOW_EXPORT_DUMPS:
@@ -321,22 +309,39 @@ def SaveMesh(filepath):
     
     xSaveMeshData(blenderMeshData, filepath)
     
-    return 1
+    
 
 def save(operator, context, filepath,       
          ogreXMLconverter=None,
-         keep_xml=False,):
+         keep_xml=False,
+         apply_transform=True,):
     
     print("saving...")
     print(str(filepath))
     
     xmlFilepath = filepath + ".xml"
-    result = SaveMesh(xmlFilepath)
     
-    if result<0:
+    # go to the object mode
+    for ob in bpy.data.objects: 
+        bpy.ops.object.mode_set(mode='OBJECT')
+    
+    # apply transform   
+    if apply_transform:        
+        bpy.ops.object.transform_apply(rotation=True, scale=True)
+        
+    # get mesh data from selected objects
+    selectedObjects = []
+    scn = bpy.context.scene
+    for ob in scn.objects:
+        if ob.select==True:            
+            selectedObjects.append(ob)
+                
+    if len(selectedObjects)==0:
         print("No objects selected for export.")
         return ('CANCELLED')
-    
+        
+    SaveMesh(xmlFilepath, selectedObjects)
+        
     if(ogreXMLconverter is not None):
         # use Ogre XML converter  xml -> binary mesh
         os.system('%s "%s"' % (ogreXMLconverter, xmlFilepath))
