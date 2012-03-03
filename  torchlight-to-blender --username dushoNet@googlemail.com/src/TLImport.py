@@ -44,7 +44,7 @@ UVtex: u=u', v = -v'+1
 
 Inner data representation:
 MESHDATA:
-['sharedgeometry']
+['sharedgeometry']: {}
     ['positions'] - vectors with (x,y,z)
     ['normals'] - vectors with (x,y,z)
     ['vertexcolors'] - vectors with (r,g,b,a)
@@ -55,7 +55,8 @@ MESHDATA:
         [faces] - vectors with faces (v1,v2,v3)
         [geometry] - identical to 'sharedgeometry' data content   
 ['materials']
-    [(matID)]:'texture path'
+    [(matID)]: {}
+        ['texture path'] - full path to texture file
 """
 
 #from Blender import *
@@ -252,13 +253,15 @@ def xCollectMaterialData(meshData, materialFile, folder):
             MaterialDic[MaterialName].append(line)
         if "}" in line:
             count -= 1
-    Textures = {}
+    allMaterials = {}
     #print(MaterialDic)
     for Material in MaterialDic.keys():
+        matDict = {}
+        allMaterials[Material] = matDict        
         print ("Materialname:", Material)
         for line in MaterialDic[Material]:
             if "texture_unit" in line:
-                Textures[Material] = ""
+                #allMaterials[Material] = ""
                 count = 0
             if "{" in line:
                 count+=1
@@ -268,14 +271,14 @@ def xCollectMaterialData(meshData, materialFile, folder):
                 if(not os.path.isfile(file)):
                     # just force to use .dds if there isn't file specified in material file
                     file = os.path.join(folder, os.path.splitext((line.split()[1]))[0] + ".dds")
-                Textures[Material] += file
+                matDict['texture'] = file
                     
             if "}" in line:
                 count-=1
     
     # store it into meshData
-    meshData['materials']= Textures
-    print(Textures)
+    meshData['materials']= allMaterials
+    print(allMaterials)
     #return Textures
 
                
@@ -351,20 +354,25 @@ def bCreateSubMeshes(meshData):
         for f in me.faces:
             f.use_smooth = True        
               
+        hasTexture = False
         # material for the submesh
         # Create image texture from image.         
-        if subMeshName in meshData['materials']:
-            realpath = meshData['materials'][subMeshName] # texture path
-            if realpath:
-                tex = bpy.data.textures.new('ColorTex', type = 'IMAGE')
-                tex.image = bpy.data.images.load(realpath)
-                tex.use_alpha = True
+        if subMeshName in meshData['materials']:            
+            matInfo = meshData['materials'][subMeshName] # texture path
+            if 'texture' in matInfo:
+                texturePath = matInfo['texture']
+                if texturePath:
+                    hasTexture = True
+                    tex = bpy.data.textures.new('ColorTex', type = 'IMAGE')
+                    tex.image = bpy.data.images.load(texturePath)
+                    tex.use_alpha = True
          
         # Create shadeless material and MTex
-        mat = bpy.data.materials.new('TexMat')
+        mat = bpy.data.materials.new(subMeshName)
         mat.use_shadeless = True
         mtex = mat.texture_slots.add()
-        mtex.texture = tex
+        if hasTexture:
+            mtex.texture = tex
         mtex.texture_coords = 'UV'
         mtex.use_map_color_diffuse = True 
         
@@ -388,9 +396,10 @@ def bCreateSubMeshes(meshData):
                         uvco2 = Vector((uvco2sets[j][0],uvco2sets[j][1]))
                         uvco3 = Vector((uvco3sets[j][0],uvco3sets[j][1]))
                         uvLayer.data[f.index].uv = (uvco1,uvco2,uvco3)
-                        # this will link image to faces
-                        uvLayer.data[f.index].image=tex.image
-                        #uvLayer.data[f.index].use_image=True
+                        if hasTexture:
+                            # this will link image to faces
+                            uvLayer.data[f.index].image=tex.image
+                            #uvLayer.data[f.index].use_image=True
                         
         # this probably doesn't work
         # vertex colors               

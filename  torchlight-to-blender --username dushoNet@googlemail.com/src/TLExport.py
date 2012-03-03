@@ -295,11 +295,29 @@ def bCollectMeshData(selectedObjects):
     meshData['submeshes']=subMeshesData
     
     return meshData
-
+def bCollectMaterialData(blenderMeshData, selectedObjects):
+    
+    allMaterials = {}
+    blenderMeshData['materials'] = allMaterials
+    
+    for ob in selectedObjects:
+        if len(ob.data.materials)>0:
+            for mat in ob.data.materials:
+                #mat = bpy.types.Material
+                if mat.name not in allMaterials:
+                    if len(mat.texture_slots)>0:
+                        allMaterials[mat.name]={}
+                        allMaterials[mat.name]['texture'] = mat.texture_slots[0].texture.image.name
+    
+    
 def SaveMesh(filepath, selectedObjects):
     
      
     blenderMeshData = bCollectMeshData(selectedObjects)
+    
+    bCollectMaterialData(blenderMeshData, selectedObjects)
+    
+    print(blenderMeshData['materials'])
     
     if SHOW_EXPORT_DUMPS:
         dumpFile = filepath + "EDump"    
