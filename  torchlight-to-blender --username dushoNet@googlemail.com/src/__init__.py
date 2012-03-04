@@ -144,7 +144,13 @@ class ExportTL(bpy.types.Operator, ExportHelper):
     apply_transform = BoolProperty(
             name="Apply Transform",
             description="Applies object's transformation to its data",
-            default=True,   #TODO make default False for release
+            default=True,   
+            )
+    
+    overwrite_material = BoolProperty(
+            name="Overwrite .material",
+            description="Overwrites existing .material file, if present",
+            default=False,   
             )
 
     filter_glob = StringProperty(
@@ -171,6 +177,9 @@ class ExportTL(bpy.types.Operator, ExportHelper):
         
         row = layout.row(align=True)
         row.prop(self, "apply_transform")
+        
+        row = layout.row(align=True)
+        row.prop(self, "overwrite_material")
 
 
 def menu_func_import(self, context):

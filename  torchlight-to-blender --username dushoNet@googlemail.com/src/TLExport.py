@@ -72,6 +72,14 @@ def toFmtStr(number):
     #return str("%0.7f" % number)
     return str(round(number, 7))
 
+def indent(indent):
+    """Indentation.
+    
+       @param indent Level of indentation.
+       @return String.
+    """
+    return "        "*indent 
+
 def xSaveGeometry(geometry, xDoc, xMesh, isShared):
     # I guess positions (vertices) must be there always
     vertices = geometry['positions']
@@ -184,6 +192,54 @@ def xSaveMeshData(meshData, filepath):
     fileWr.write(xDoc.toprettyxml(indent="    ")) # 4 spaces
     #doc.writexml(fileWr, "  ")
     fileWr.close() 
+    
+def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag):
+    
+    matFile = os.path.splitext(filepath)[0] # removing .xml
+    matFile = os.path.splitext(matFile)[0] + ".material"
+    print("material file: %s" % matFile)
+    
+    isMaterial = True
+    try:
+        filein = open(matFile)
+        filein.close()
+    except:
+        #print ("Material: File", matFile, "not found!")
+        isMaterial = False
+    
+    # if there is material file, but we are not allowed to overwrite it, return
+    if isMaterial==True and overwriteMaterialFlag==False:
+        return
+    
+    if 'materials' not in meshData:
+        return
+    if len(meshData['materials'])<=0:
+        return
+    # write material        
+    fileWr = open(matFile, 'w')
+    allMatData = meshData['materials']
+    for matName, matInfo in allMatData.items():
+        fileWr.write("material %s\n" % matName)
+        fileWr.write("{\n")
+        fileWr.write(indent(1) + "technique\n" + indent(1) + "{\n")
+        fileWr.write(indent(2) + "pass\n" + indent(2) + "{\n")
+        
+        # write material content here
+        fileWr.write(indent(3) + "ambient %f %f %f\n" % (matInfo['ambient'][0], matInfo['ambient'][1], matInfo['ambient'][2]))
+        fileWr.write(indent(3) + "diffuse %f %f %f\n" % (matInfo['diffuse'][0], matInfo['diffuse'][1], matInfo['diffuse'][2]))
+        fileWr.write(indent(3) + "specular %f %f %f 0\n" % (matInfo['specular'][0], matInfo['specular'][1], matInfo['specular'][2]))
+        fileWr.write(indent(3) + "emissive %f %f %f\n" % (matInfo['emissive'][0], matInfo['emissive'][1], matInfo['emissive'][2]))
+        
+        fileWr.write(indent(3) + "texture_unit\n" + indent(3) + "{\n")
+        fileWr.write(indent(4) + "texture %s\n" % matInfo['texture'])
+        fileWr.write(indent(3) + "}\n") # texture unit
+        
+        fileWr.write(indent(2) + "}\n") # pass
+        fileWr.write(indent(1) + "}\n") # technique
+        fileWr.write("}\n")
+    
+    fileWr.close()
+    
 
 def getVertexIndex(vertexInfo, vertexList):
     
@@ -295,6 +351,7 @@ def bCollectMeshData(selectedObjects):
     meshData['submeshes']=subMeshesData
     
     return meshData
+
 def bCollectMaterialData(blenderMeshData, selectedObjects):
     
     allMaterials = {}
@@ -303,14 +360,24 @@ def bCollectMaterialData(blenderMeshData, selectedObjects):
     for ob in selectedObjects:
         if len(ob.data.materials)>0:
             for mat in ob.data.materials:
-                #mat = bpy.types.Material
+                #mat = bpy.types.Material ##
                 if mat.name not in allMaterials:
-                    if len(mat.texture_slots)>0:
-                        allMaterials[mat.name]={}
-                        allMaterials[mat.name]['texture'] = mat.texture_slots[0].texture.image.name
+                    matInfo = {}
+                    allMaterials[mat.name]=matInfo                    
+                    # ambient
+                    matInfo['ambient']=[ mat.ambient, mat.ambient, mat.ambient]
+                    # diffuse
+                    matInfo['diffuse']=[mat.diffuse_color[0],mat.diffuse_color[1],mat.diffuse_color[2]]
+                    # specular
+                    matInfo['specular']=[mat.specular_color[0],mat.specular_color[1],mat.specular_color[2]]
+                    # emissive
+                    matInfo['emissive']=[mat.emit,mat.emit,mat.emit]                    
+                    # texture
+                    if len(mat.texture_slots)>0:                        
+                        matInfo['texture'] = mat.texture_slots[0].texture.image.name
     
     
-def SaveMesh(filepath, selectedObjects):
+def SaveMesh(filepath, selectedObjects, overrideMaterialFlag):
     
      
     blenderMeshData = bCollectMeshData(selectedObjects)
@@ -327,12 +394,14 @@ def SaveMesh(filepath, selectedObjects):
     
     xSaveMeshData(blenderMeshData, filepath)
     
+    xSaveMaterialData(filepath, blenderMeshData, overrideMaterialFlag)
     
 
 def save(operator, context, filepath,       
          ogreXMLconverter=None,
          keep_xml=False,
-         apply_transform=True,):
+         apply_transform=True,
+         overwrite_material=False,):
     
     print("saving...")
     print(str(filepath))
@@ -358,7 +427,7 @@ def save(operator, context, filepath,
         print("No objects selected for export.")
         return ('CANCELLED')
         
-    SaveMesh(xmlFilepath, selectedObjects)
+    SaveMesh(xmlFilepath, selectedObjects, overwrite_material)
         
     if(ogreXMLconverter is not None):
         # use Ogre XML converter  xml -> binary mesh

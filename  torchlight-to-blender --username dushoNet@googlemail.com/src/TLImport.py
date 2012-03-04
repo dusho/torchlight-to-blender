@@ -265,20 +265,54 @@ def xCollectMaterialData(meshData, materialFile, folder):
                 count = 0
             if "{" in line:
                 count+=1
+            # texture
             if (count > 0) and ("texture" in line):
-                file = os.path.join(folder, (line.split()[1]))            
-                
+                file = os.path.join(folder, (line.split()[1]))                        
                 if(not os.path.isfile(file)):
                     # just force to use .dds if there isn't file specified in material file
                     file = os.path.join(folder, os.path.splitext((line.split()[1]))[0] + ".dds")
                 matDict['texture'] = file
+            # ambient color
+            if(count>0) and ("ambient" in line):
+                lineSplit = line.split()
+                if len(lineSplit)>=4:
+                    r=float(lineSplit[1])
+                    g=float(lineSplit[2])
+                    b=float(lineSplit[3])
+                    matDict['ambient'] = [r,g,b]
+            # diffuse color        
+            if(count>0) and ("diffuse" in line):
+                lineSplit = line.split()
+                if len(lineSplit)>=4:
+                    r=float(lineSplit[1])
+                    g=float(lineSplit[2])
+                    b=float(lineSplit[3])
+                    matDict['diffuse'] = [r,g,b]
                     
+            # specular color        
+            if(count>0) and ("specular" in line):
+                lineSplit = line.split()
+                if len(lineSplit)>=4:
+                    r=float(lineSplit[1])
+                    g=float(lineSplit[2])
+                    b=float(lineSplit[3])
+                    matDict['specular'] = [r,g,b]
+                    
+            # emissive color        
+            if(count>0) and ("emissive" in line):
+                lineSplit = line.split()
+                if len(lineSplit)>=4:
+                    r=float(lineSplit[1])
+                    g=float(lineSplit[2])
+                    b=float(lineSplit[3])
+                    matDict['emissive'] = [r,g,b]
+                                    
             if "}" in line:
                 count-=1
     
     # store it into meshData
     meshData['materials']= allMaterials
-    print(allMaterials)
+    print("allMaterials: %s" % allMaterials)
     #return Textures
 
                
@@ -358,7 +392,7 @@ def bCreateSubMeshes(meshData):
         # material for the submesh
         # Create image texture from image.         
         if subMeshName in meshData['materials']:            
-            matInfo = meshData['materials'][subMeshName] # texture path
+            matInfo = meshData['materials'][subMeshName] # material data
             if 'texture' in matInfo:
                 texturePath = matInfo['texture']
                 if texturePath:
@@ -367,18 +401,30 @@ def bCreateSubMeshes(meshData):
                     tex.image = bpy.data.images.load(texturePath)
                     tex.use_alpha = True
          
-        # Create shadeless material and MTex
-        mat = bpy.data.materials.new(subMeshName)
-        mat.use_shadeless = True
-        mtex = mat.texture_slots.add()
-        if hasTexture:
-            mtex.texture = tex
-        mtex.texture_coords = 'UV'
-        mtex.use_map_color_diffuse = True 
-        
-        # add material to object
-        ob.data.materials.append(mat)
-        #print(me.uv_textures[0].data.values()[0].image)       
+            # Create shadeless material and MTex
+            mat = bpy.data.materials.new(subMeshName)
+            # ambient
+            if 'ambient' in matInfo:
+                mat.ambient = matInfo['ambient'][0]
+            # diffuse
+            if 'diffuse' in matInfo:
+                mat.diffuse_color = matInfo['diffuse']
+            # specular
+            if 'specular' in matInfo:
+                mat.specular_color = matInfo['specular']
+            # emmisive
+            if 'emissive' in matInfo:
+                mat.emit = matInfo['emissive'][0]
+            mat.use_shadeless = True
+            mtex = mat.texture_slots.add()
+            if hasTexture:
+                mtex.texture = tex
+            mtex.texture_coords = 'UV'
+            mtex.use_map_color_diffuse = True 
+            
+            # add material to object
+            ob.data.materials.append(mat)
+            #print(me.uv_textures[0].data.values()[0].image)       
             
         # texture coordinates
         if 'texcoordsets' in geometry:
@@ -445,10 +491,12 @@ def load(operator, context, filepath,
     print(str(filepath))
     
     folder = os.path.split(filepath)[0]
-    meshfilename = os.path.split(filepath)[1].lower()    
+    meshfilename = os.path.split(filepath)[1].lower()      
     name = "mesh"
     files = []
     materialFile = "None"
+    
+    #TODO: do not process and convert everything in folder, take just selected mesh (and linked skeleton)
     
     print(ogreXMLconverter)
     if(ogreXMLconverter is not None):
