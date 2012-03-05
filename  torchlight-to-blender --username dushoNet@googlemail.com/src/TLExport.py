@@ -10,7 +10,7 @@ Author: Dusho
 """
 
 __author__ = "Dusho"
-__version__ = "0.4.1 29-Feb-2012"
+__version__ = "0.5 06-Mar-2012"
 
 __bpydoc__ = """\
 This script imports Torchlight Ogre models into Blender.
@@ -22,13 +22,13 @@ Missing:<br>
     * vertex weights
     * skeletons
     * animations
-    * material export
     * vertex color import/export
 
 Known issues:<br>
     * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
      
 History:<br>
+    * v0.5     (06-Mar-2012) - added material import/export
     * v0.4.1   (29-Feb-2012) - flag for applying transformation, default=true
     * v0.4     (28-Feb-2012) - fixing export when no UV data are present
     * v0.3     (22-Feb-2012) - WIP - started cleaning + using OgreXMLConverter
@@ -230,9 +230,10 @@ def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag):
         fileWr.write(indent(3) + "specular %f %f %f 0\n" % (matInfo['specular'][0], matInfo['specular'][1], matInfo['specular'][2]))
         fileWr.write(indent(3) + "emissive %f %f %f\n" % (matInfo['emissive'][0], matInfo['emissive'][1], matInfo['emissive'][2]))
         
-        fileWr.write(indent(3) + "texture_unit\n" + indent(3) + "{\n")
-        fileWr.write(indent(4) + "texture %s\n" % matInfo['texture'])
-        fileWr.write(indent(3) + "}\n") # texture unit
+        if 'texture' in matInfo:
+            fileWr.write(indent(3) + "texture_unit\n" + indent(3) + "{\n")
+            fileWr.write(indent(4) + "texture %s\n" % matInfo['texture'])
+            fileWr.write(indent(3) + "}\n") # texture unit
         
         fileWr.write(indent(2) + "}\n") # pass
         fileWr.write(indent(1) + "}\n") # technique
@@ -373,8 +374,9 @@ def bCollectMaterialData(blenderMeshData, selectedObjects):
                     # emissive
                     matInfo['emissive']=[mat.emit,mat.emit,mat.emit]                    
                     # texture
-                    if len(mat.texture_slots)>0:                        
-                        matInfo['texture'] = mat.texture_slots[0].texture.image.name
+                    if len(mat.texture_slots)>0:
+                        if mat.texture_slots[0].texture:                       
+                            matInfo['texture'] = mat.texture_slots[0].texture.image.name
     
     
 def SaveMesh(filepath, selectedObjects, overrideMaterialFlag):
@@ -441,4 +443,3 @@ def save(operator, context, filepath,
     
     return {'FINISHED'}
 
-#save(0, bpy.context, "D:\stuff\Torchlight_modding\org_models\box\box_t2.mesh.xml")

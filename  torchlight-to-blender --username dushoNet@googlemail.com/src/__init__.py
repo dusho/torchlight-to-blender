@@ -28,7 +28,7 @@ Author: Dusho
 """
 
 __author__ = "Dusho"
-__version__ = "0.4.1 29-Feb-2012"
+__version__ = "0.5 06-Mar-2012"
 
 __bpydoc__ = """\
 This script imports Torchlight Ogre models into Blender.
@@ -40,13 +40,13 @@ Missing:<br>
     * vertex weights
     * skeletons
     * animations
-    * material export
     * vertex color import/export
 
 Known issues:<br>
     * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
      
 History:<br>
+    * v0.5     (06-Mar-2012) - added material import/export
     * v0.4.1   (29-Feb-2012) - flag for applying transformation, default=true
     * v0.4     (28-Feb-2012) - fixing export when no UV data are present
     * v0.3     (22-Feb-2012) - WIP - started cleaning + using OgreXMLConverter

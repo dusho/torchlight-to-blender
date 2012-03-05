@@ -10,7 +10,7 @@ Author: Dusho
 """
 
 __author__ = "Dusho"
-__version__ = "0.4.1 29-Feb-2012"
+__version__ = "0.5 06-Mar-2012"
 
 __bpydoc__ = """\
 This script imports Torchlight Ogre models into Blender.
@@ -22,13 +22,13 @@ Missing:<br>
     * vertex weights
     * skeletons
     * animations
-    * material export
     * vertex color import/export
 
 Known issues:<br>
     * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
      
 History:<br>
+    * v0.5     (06-Mar-2012) - added material import/export
     * v0.4.1   (29-Feb-2012) - flag for applying transformation, default=true
     * v0.4     (28-Feb-2012) - fixing export when no UV data are present
     * v0.3     (22-Feb-2012) - WIP - started cleaning + using OgreXMLConverter
@@ -67,6 +67,7 @@ from mathutils import Vector, Matrix
 import os
 
 SHOW_IMPORT_DUMPS = False
+SHOW_IMPORT_TRACE = True
 # default blender version of script
 blender_version = 259
 
@@ -101,6 +102,14 @@ def GetValidBlenderName(name):
             
     return newname
 
+def fileExist(filepath):
+    try:
+        filein = open(filepath)
+        filein.close()
+        return True
+    except:
+        print ("No file: ", filepath)
+        return False
 
 def xOpenFile(filename):
     xml_file = open(filename)    
@@ -195,6 +204,7 @@ def xCollectMeshData(xmldoc,meshname,Textures,dirname):
     if(len(xmldoc.getElementsByTagName('sharedgeometry')) > 0):
         for subnodes in xmldoc.getElementsByTagName('sharedgeometry'):
             meshData['sharedgeometry'] = xCollectVertexData(subnodes)
+            
     # collect submeshes data       
     for submeshes in xmldoc.getElementsByTagName('submeshes'):
         for submesh in submeshes.childNodes:
@@ -206,8 +216,7 @@ def xCollectMeshData(xmldoc,meshname,Textures,dirname):
                 sm['material']=material
                 for subnodes in submesh.childNodes:
                     if subnodes.localName == 'faces':
-                        facescount = int(subnodes.getAttributeNode('count').value)
-                        #sm.append(xCollectFaceData(subnodes))
+                        facescount = int(subnodes.getAttributeNode('count').value)                        
                         sm['faces']=xCollectFaceData(subnodes)
                     
                         if len(xCollectFaceData(subnodes)) != facescount:
@@ -216,7 +225,6 @@ def xCollectMeshData(xmldoc,meshname,Textures,dirname):
                     
                     if (subnodes.localName == 'geometry'):
                         vertexcount = int(subnodes.getAttributeNode('vertexcount').value)
-                        #sm.append(xCollectVertexData(subnodes))
                         sm['geometry']=xCollectVertexData(subnodes)
                                                                    
 #                    if subnodes.localName == 'boneassignments':
@@ -228,7 +236,7 @@ def xCollectMeshData(xmldoc,meshname,Textures,dirname):
     meshData['submeshes']=subMeshData
             
     return meshData
-# for now just collecting material and texture {[material:texture]}
+
 def xCollectMaterialData(meshData, materialFile, folder):
     try:
         filein = open(materialFile)
@@ -256,17 +264,19 @@ def xCollectMaterialData(meshData, materialFile, folder):
     allMaterials = {}
     #print(MaterialDic)
     for Material in MaterialDic.keys():
+        count = 0
         matDict = {}
-        allMaterials[Material] = matDict        
-        print ("Materialname:", Material)
+        allMaterials[Material] = matDict   
+        if SHOW_IMPORT_TRACE:     
+            print ("Materialname: ", Material)
         for line in MaterialDic[Material]:
-            if "texture_unit" in line:
+            #if "texture_unit" in line:
                 #allMaterials[Material] = ""
-                count = 0
+                #count = 0
             if "{" in line:
                 count+=1
             # texture
-            if (count > 0) and ("texture" in line):
+            if (count > 0) and ("texture " in line):
                 file = os.path.join(folder, (line.split()[1]))                        
                 if(not os.path.isfile(file)):
                     # just force to use .dds if there isn't file specified in material file
@@ -312,15 +322,16 @@ def xCollectMaterialData(meshData, materialFile, folder):
     
     # store it into meshData
     meshData['materials']= allMaterials
-    print("allMaterials: %s" % allMaterials)
+    if SHOW_IMPORT_TRACE:
+        print("allMaterials: %s" % allMaterials)
     #return Textures
 
                
-def CreateMesh(xml_doc, folder, name, materialFile, filepath):
+def CreateMesh(xDocMeshData, folder, name, materialFile, filepath):
 
     textures = 'None'
     print("collecting mesh data...")
-    meshData = xCollectMeshData(xml_doc, name, textures, folder)
+    meshData = xCollectMeshData(xDocMeshData, name, textures, folder)
     
     xCollectMaterialData(meshData, materialFile, folder)
     # from collected data create all sub meshes
@@ -332,15 +343,6 @@ def CreateMesh(xml_doc, folder, name, materialFile, filepath):
     for subOb in subObjs:
         subOb.select = True
     
-#    # get mesh data from selected objects
-#    selectedObjects = []
-#    scn = bpy.context.scene
-#    for ob in scn.objects:
-#        if ob.select==True:
-#            selectedObjects.append(ob)
-#  
-
-
     if SHOW_IMPORT_DUMPS:
         importDump = filepath + "IDump"  
         fileWr = open(importDump, 'w') 
@@ -488,61 +490,99 @@ def load(operator, context, filepath,
     blender_version = bpy.app.version[0]*100 + bpy.app.version[1]
         
     print("loading...")
-    print(str(filepath))
+    print(str(filepath))    
     
-    folder = os.path.split(filepath)[0]
-    meshfilename = os.path.split(filepath)[1].lower()      
-    name = "mesh"
-    files = []
-    materialFile = "None"
+    #meshfilename = os.path.split(filepath)[1].lower()      
+    #name = "mesh"
+    #files = []
+    #materialFile = "None"
+        
+    filepath = filepath.lower()
+    pathMeshXml = filepath  
+    # get the mesh as .xml file
+    if (".mesh" in filepath):
+        if (".xml" not in filepath):
+            os.system('%s "%s"' % (ogreXMLconverter, filepath))
+            pathMeshXml = filepath + ".xml"
+    else:
+        return('CANCELLED')
     
-    #TODO: do not process and convert everything in folder, take just selected mesh (and linked skeleton)
+    folder = os.path.split(filepath)[0]    
+    nameDotMeshDotXml = os.path.split(pathMeshXml)[1].lower()
+    nameDotMesh = os.path.splitext(nameDotMeshDotXml)[0]
+    onlyName = os.path.splitext(nameDotMesh)[0] 
     
-    print(ogreXMLconverter)
-    if(ogreXMLconverter is not None):
-        # convert MESH and SKELETON file to MESH.XML and SKELETON.XML respectively
+    # TODO: here find whether mesh has linked .skeleton
+        
+    # material
+    nameDotMaterial = onlyName + ".material"
+    pathMaterial = os.path.join(folder, nameDotMaterial)
+    if fileExist(pathMaterial)==False:
+        # search directory for .material    
         for filename in os.listdir(folder):
-            # we're going to do string comparisons. assume lower case to simplify code
-            filename = os.path.join(folder, filename.lower())
-            # process .mesh and .skeleton files while skipping .xml files
-            if (".mesh" in filename) and (".xml" not in filename):
-                os.system('%s "%s"' % (ogreXMLconverter, filename))
+            if ".material" in filename:
+                # material file
+                pathMaterial = os.path.join(folder, filename)
+                
+    # try to parse xml file
+    xDocMeshData = xOpenFile(pathMeshXml)
+    if xDocMeshData != "None":
+        # create a mesh from parsed data
+        CreateMesh(xDocMeshData, folder, onlyName, pathMaterial, pathMeshXml)
+        if not keep_xml:
+            # cleanup by deleting the XML file we created
+            os.unlink("%s" % pathMeshXml)
             
-    # get all the filenames in the chosen directory, put in list and sort it
-    for filename in os.listdir(folder):
-        # we're going to do string comparisons. assume lower case to simplify code
-        filename = filename.lower()
-        # process .mesh and .skeleton files while skipping .xml files
-        if ".skeleton.xml" in filename:
-            files.append(os.path.join(folder, filename))
-        elif (".mesh.xml" in filename) and (meshfilename in filename):
-            print (meshfilename)
-            # get the name of the MESH file without extension. Use this base name to name our imported object
-            name = filename.split('.')[0]
-            # to avoid Blender naming limit problems
-            name = GetValidBlenderName(name)
-            # put MESH file on top of the file list
-            files.insert(0, os.path.join(folder, filename))
-        elif ".material" in filename:
-            # material file
-            materialFile = os.path.join(folder, filename)
-
-    # now that we have a list of files, process them
-    filename = files[0]
-    
-    #filename = filepath.lower()
-    # import the mesh
-    if (".mesh" in filename):
-        mesh_data = xOpenFile(filename)
-        if mesh_data != "None":
-            #CreateSkeleton(mesh_data, folder, name)
-            CreateMesh(mesh_data, folder, name, materialFile, filepath)
-            if not keep_xml:
-                # cleanup by deleting the XML file we created
-                os.unlink("%s" % filename)
+    if SHOW_IMPORT_TRACE:
+        print("folder: %s" % folder)
+        print("nameDotMesh: %s" % nameDotMesh)
+        print("nameDotMeshDotXml: %s" % nameDotMeshDotXml)
+        print("onlyName: %s" % onlyName)
+        print("nameDotMaterial: %s" % nameDotMaterial)
+        print("pathMaterial: %s" % pathMaterial)    
+        print("ogreXMLconverter: %s" % ogreXMLconverter)
+        
+#    if(ogreXMLconverter is not None):
+#        # convert MESH and SKELETON file to MESH.XML and SKELETON.XML respectively
+#        for filename in os.listdir(folder):
+#            # we're going to do string comparisons. assume lower case to simplify code
+#            filename = os.path.join(folder, filename.lower())
+#            # process .mesh and .skeleton files while skipping .xml files
+#            if (".mesh" in filename) and (".xml" not in filename):
+#                os.system('%s "%s"' % (ogreXMLconverter, filename))
+#            
+#    # get all the filenames in the chosen directory, put in list and sort it
+#    for filename in os.listdir(folder):
+#        # we're going to do string comparisons. assume lower case to simplify code
+#        filename = filename.lower()
+#        # process .mesh and .skeleton files while skipping .xml files
+#        if ".skeleton.xml" in filename:
+#            files.append(os.path.join(folder, filename))
+#        elif (".mesh.xml" in filename) and (meshfilename in filename):
+#            print (meshfilename)
+#            # get the name of the MESH file without extension. Use this base name to name our imported object
+#            name = filename.split('.')[0]
+#            # to avoid Blender naming limit problems
+#            name = GetValidBlenderName(name)
+#            # put MESH file on top of the file list
+#            files.insert(0, os.path.join(folder, filename))
+#        elif ".material" in filename:
+#            # material file
+#            materialFile = os.path.join(folder, filename)
+#
+#    # now that we have a list of files, process them
+#    filename = files[0]
+#    
+#    #filename = filepath.lower()
+#    # import the mesh
+#    if (".mesh" in filename):
+#        mesh_data = xOpenFile(filename)
+#        if mesh_data != "None":
+#            #CreateSkeleton(mesh_data, folder, name)
+#            CreateMesh(mesh_data, folder, name, materialFile, filepath)
+#            if not keep_xml:
+#                # cleanup by deleting the XML file we created
+#                os.unlink("%s" % filename)
     
     print("done.")
     return {'FINISHED'}
- 
-#load(0, bpy.context, "D:\stuff\Torchlight_modding\org_models\Alchemist\Alchemist.MESH.xml")
-#load(0, bpy.context, "D:\stuff\Torchlight_modding\org_models\Shields_03\Shields_03.MESH.xml")
