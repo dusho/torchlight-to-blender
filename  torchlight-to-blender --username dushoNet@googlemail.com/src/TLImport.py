@@ -45,28 +45,37 @@ UVtex: u=u', v = -v'+1
 Inner data representation:
 MESHDATA:
 ['sharedgeometry']: {}
-    ['positions'] - vectors with (x,y,z)
-    ['normals'] - vectors with (x,y,z)
-    ['vertexcolors'] - vectors with (r,g,b,a)
+    ['positions'] - vectors with [x,y,z]
+    ['normals'] - vectors with [x,y,z]
+    ['vertexcolors'] - vectors with [r,g,b,a]
     ['texcoordsets'] - integer (number of UV sets)
-    ['uvsets'] - vectors with (u,v) * number or UV sets for vertex [(u,v)][(u,v)]...
+    ['uvsets'] - vectors with [u,v] * number or UV sets for vertex [[u,v]][[u,v]]...
 ['submeshes'][idx]
         [material] - string (material name)
-        [faces] - vectors with faces (v1,v2,v3)
+        [faces] - vectors with faces [v1,v2,v3]
         [geometry] - identical to 'sharedgeometry' data content   
 ['materials']
     [(matID)]: {}
         ['texture path'] - full path to texture file
+['skeleton']: {[boneName]} for each bone
+        ['name'] - bone name
+        ['id'] - bone ID
+        ['position'] - bone position [x,y,z]
+        ['rotation'] - bone rotation [x,y,z,angle]
+        ['parent'] - bone name of parent bone
+        ['children'] - list with names if children ([child1, child2, ...])
+['boneIDs']: {[bone ID]:[bone Name]} - dictionary with ID to name
+    
 """
 
 #from Blender import *
 from xml.dom import minidom
 import bpy
 from mathutils import Vector, Matrix
-#import math
+import math
 import os
 
-SHOW_IMPORT_DUMPS = False
+SHOW_IMPORT_DUMPS = True
 SHOW_IMPORT_TRACE = True
 # default blender version of script
 blender_version = 259
@@ -191,9 +200,9 @@ def xCollectVertexData(data):
                         
     return vertexdata
 
-def xCollectMeshData(xmldoc,meshname,Textures,dirname):
+def xCollectMeshData(meshData, xmldoc, meshname, dirname):
     #global has_skeleton
-    meshData = {}
+    #meshData = {}
     faceslist = []
     subMeshData = []
     allObjs = []
@@ -326,14 +335,182 @@ def xCollectMaterialData(meshData, materialFile, folder):
         print("allMaterials: %s" % allMaterials)
     #return Textures
 
-               
-def CreateMesh(xDocMeshData, folder, name, materialFile, filepath):
+#def xCollectIDToBoneData(xmldoc):
+#    
+#    dicIDToBone = {}
+#
+#    for bones in xmldoc.getElementsByTagName('bones'):
+#    
+#        for bone in bones.childNodes:
+#            if bone.localName == 'bone':
+#                boneName = str(bone.getAttributeNode('name').value)
+#                boneID = int(bone.getAttributeNode('id').value)
+#                dicIDToBone[str(boneID)] = boneName
+#                
+#    return dicIDToBone
 
-    textures = 'None'
-    print("collecting mesh data...")
-    meshData = xCollectMeshData(xDocMeshData, name, textures, folder)
+def xGetSkeletonLink(xmldoc, folder):
+    skeletonFile = "None"
+    if(len(xmldoc.getElementsByTagName("skeletonlink")) > 0):
+        # get the skeleton link of the mesh
+        skeleton_link = xmldoc.getElementsByTagName("skeletonlink")[0]
+        skeletonFile = os.path.join(folder, skeleton_link.getAttribute("name"))
+        # check for existence of skeleton file
+        if fileExist(skeletonFile)==False:
+            skeletonFile = "None"
+        
+    return skeletonFile
+
+#def xCollectBoneData(meshData, xDoc, name, folder):
+def xCollectBoneData(meshData, xDoc):
+    OGRE_Bones = {}
+    BoneIDToName = {}
+    meshData['skeleton'] = OGRE_Bones
+    meshData['boneIDs']= BoneIDToName
+        
+    for bones in xDoc.getElementsByTagName('bones'):    
+        for bone in bones.childNodes:
+            OGRE_Bone = {}
+            if bone.localName == 'bone':
+                boneName = str(bone.getAttributeNode('name').value)
+                boneID = int(bone.getAttributeNode('id').value)
+                OGRE_Bone['name'] = boneName
+                OGRE_Bone['id'] = boneID
+                BoneIDToName[str(boneID)] = boneName
+                            
+                for b in bone.childNodes:
+                    if b.localName == 'position':
+                        x = float(b.getAttributeNode('x').value)
+                        y = float(b.getAttributeNode('y').value)
+                        z = float(b.getAttributeNode('z').value)
+                        OGRE_Bone['position'] = [x,y,z]
+                    if b.localName == 'rotation':
+                        angle = float(b.getAttributeNode('angle').value)
+                        axis = b.childNodes[1]
+                        axisx = float(axis.getAttributeNode('x').value)
+                        axisy = float(axis.getAttributeNode('y').value)
+                        axisz = float(axis.getAttributeNode('z').value)
+                        OGRE_Bone['rotation'] = [axisx,axisy,axisz,angle]
+                
+                OGRE_Bones[boneName] = OGRE_Bone
+                    
+    for bonehierarchy in xDoc.getElementsByTagName('bonehierarchy'):
+        for boneparent in bonehierarchy.childNodes:
+            if boneparent.localName == 'boneparent':
+                Bone = str(boneparent.getAttributeNode('bone').value)
+                Parent = str(boneparent.getAttributeNode('parent').value)
+                OGRE_Bones[Bone]['parent'] = Parent
+        
+    #update Ogre bones with list of children
+    calcBoneChildren(OGRE_Bones)
     
-    xCollectMaterialData(meshData, materialFile, folder)
+    #update Ogre bones with head positions
+    calcBoneHeadPositions(OGRE_Bones)
+    
+    #update Ogre bones with rotation matrices
+    calcBoneRotations(OGRE_Bones)
+
+    return OGRE_Bones
+def calcBoneChildren(BonesData):
+    for bone in BonesData.keys():
+        childlist = []
+        for key in BonesData.keys():
+            if 'parent' in BonesData[key]:
+                parent = BonesData[key]['parent']
+                if parent == bone:
+                    childlist.append(key)
+        BonesData[bone]['children'] = childlist
+
+def calcBoneHeadPositions(BonesData):
+    
+    for key in BonesData.keys():
+        
+        start = 0        
+        thisbone = key
+        posh = BonesData[key]['position']
+        
+        while start == 0:
+            if 'parent' in BonesData[thisbone]:
+                parentbone = BonesData[thisbone]['parent']
+                prot = BonesData[parentbone]['rotation']
+                ppos = BonesData[parentbone]['position']            
+                
+                #protmat = RotationMatrix(math.degrees(prot[3]),3,'r',Vector(prot[0],prot[1],prot[2])).invert()
+                protmat = Matrix.Rotation(prot[3],3,Vector([prot[0],prot[1],prot[2]])).inverted()
+                #print(protmat)
+                newposh = protmat * Vector([posh[0],posh[1],posh[2]])
+                
+                positionh = VectorSum(ppos,newposh)
+            
+                posh = positionh
+                
+                thisbone = parentbone
+            else:
+                start = 1
+        
+        BonesData[key]['posHAS'] = posh
+
+def calcBoneRotations(BonesDic):
+    
+    objDic =  {}
+    scn = bpy.context.scene
+    #scn = Scene.GetCurrent()
+    for bone in BonesDic.keys():
+        #obj = Object.New('Empty',bone)
+        obj = bpy.data.objects.new(bone, None)
+        objDic[bone] = obj
+        scn.objects.link(obj)
+    #print(bpy.data.objects)
+    for bone in BonesDic.keys():
+        if 'parent' in BonesDic[bone]:
+            #Parent = Object.Get(BonesDic[bone]['parent'])
+            #print(BonesDic[bone]['parent'])
+            Parent = objDic.get(BonesDic[bone]['parent'])
+            object = objDic.get(bone)
+            object.parent = Parent
+            #Parent.makeParent([object])
+        
+    for bone in BonesDic.keys():
+        obj = objDic.get(bone)
+        rot = BonesDic[bone]['rotation']
+        loc = BonesDic[bone]['position']
+        euler = Matrix.Rotation(rot[3],3,Vector([rot[0],-rot[2],rot[1]])).to_euler()
+        obj.location = [loc[0],-loc[2],loc[1]]
+        obj.rotation_euler = [math.radians(euler[0]),math.radians(euler[1]),math.radians(euler[2])]
+    #Redraw()
+    scn.update()
+    
+    for bone in BonesDic.keys():
+        obj = objDic.get(bone)
+        # TODO: need to get rotation matrix out of objects rotation
+        loc, rot, scale = obj.matrix_local.decompose()
+        rotmatAS = rot.to_matrix()
+        #print(rotmatAS)
+#        obj.rotation_quaternion.
+#        rotmatAS = Matrix(.matrix_local..getMatrix().rotationPart()
+        BonesDic[bone]['rotmatAS'] = rotmatAS
+        
+    
+    for bone in BonesDic.keys():
+        obj = objDic.get(bone)
+        scn.objects.unlink(obj)
+        del obj
+
+def VectorSum(vec1,vec2):
+    vecout = [0,0,0]
+    vecout[0] = vec1[0]+vec2[0]
+    vecout[1] = vec1[1]+vec2[1]
+    vecout[2] = vec1[2]+vec2[2]
+    
+    return vecout
+
+def calcBoneLength(vec):
+    return math.sqrt(vec[0]**2+vec[1]**2+vec[2]**2)
+               
+def CreateMesh(meshData, folder, name, materialFile, filepath):
+    
+    if 'skeleton' in meshData:
+        bCreateSkeleton(meshData, name)
     # from collected data create all sub meshes
     subObjs = bCreateSubMeshes(meshData)
     # skin submeshes
@@ -348,8 +525,118 @@ def CreateMesh(xDocMeshData, folder, name, materialFile, filepath):
         fileWr = open(importDump, 'w') 
         fileWr.write(str(meshData))    
         fileWr.close() 
+
+#def createRig(amt, boneTable):
+##    # Create armature and object
+##    bpy.ops.object.add(
+##        type='ARMATURE', 
+##        enter_editmode=True,
+##        location=origin)
+##    ob = bpy.context.object
+##    ob.show_x_ray = True
+##    ob.name = name
+##    amt = ob.data
+##    amt.name = name+'Amt'
+##    amt.show_axes = True
+# 
+#    # Create bones
+#    bpy.ops.object.mode_set(mode='EDIT')
+#    for (bname, pname, vector) in boneTable:        
+#        bone = amt.edit_bones.new(bname)
+#        if pname:
+#            parent = amt.edit_bones[pname]
+#            bone.parent = parent
+#            bone.head = parent.tail
+#            bone.use_connect = False
+#            (trans, rot, scale) = parent.matrix.decompose()
+#        else:
+#            bone.head = (0,0,0)
+#            rot = Matrix.Translation((0,0,0))    # identity matrix
+#        bone.tail = rot * Vector(vector) + bone.head
+#    bpy.ops.object.mode_set(mode='OBJECT')
+#    #return ob
     
-       
+def bCreateSkeleton(meshData, name):
+    
+#    obj = Object.New('Armature',name)
+#    arm = Armature.New(name)
+#    obj.link(arm)
+#    scn.link(obj)
+    if 'skeleton' not in meshData:
+        return
+    bonesData = meshData['skeleton']
+
+    # create Armature
+    amt = bpy.data.armatures.new(name)
+    rig = bpy.data.objects.new(name, amt)
+    #rig.location = origin
+    rig.show_x_ray = True
+    #amt.show_names = True
+    # Link object to scene
+    scn = bpy.context.scene
+    scn.objects.link(rig)
+    scn.objects.active = rig
+    scn.update()
+    
+#    boneTable1 = [
+#        ('Base', None, (1,0,0)),
+#        ('Mid', 'Base', (1,0,0)),
+#        ('Tip', 'Mid', (0,0,1))
+#    ]
+#    bent = createRig(amt, boneTable1)
+    
+    bpy.ops.object.mode_set(mode='EDIT')
+    for bone in bonesData.keys():
+        boneData = bonesData[bone]
+        boneName = boneData['name']
+        
+        children = boneData['children']
+        boneObj = amt.edit_bones.new(boneName)
+        #boneObj.head = boneData['posHAS']
+        #headPos = boneData['posHAS']
+        headPos = boneData['posHAS']
+        tailVector = 0.2
+        if len(children)==1:
+            tailVector=calcBoneLength(bonesData[children[0]]['position'])
+        
+        boneObj.head = Vector([headPos[0],-headPos[2],headPos[1]])
+        boneObj.tail = Vector([headPos[0],-headPos[2],headPos[1] + tailVector])  
+        #boneObj.matrix =   
+        rotmat = boneData['rotmatAS']
+        #print(rotmat[1].to_tuple())
+        #boneObj.matrix = Matrix(rotmat[1],rotmat[0],rotmat[2])
+        r0 = [rotmat[0].x] + [rotmat[0].y] + [rotmat[0].z]
+        r1 = [rotmat[1].x] + [rotmat[1].y] + [rotmat[1].z]
+        r2 = [rotmat[2].x] + [rotmat[2].y] + [rotmat[2].z]
+        #print(r1)
+        boneObj.transform(Matrix((r1,r0,r2)))
+        
+    # only after all bones are created we can link parents    
+    for bone in bonesData.keys():
+        boneData = bonesData[bone]
+        parent = None
+        if 'parent' in boneData.keys():
+            parent = boneData['parent']
+            # get bone obj
+            boneData = bonesData[bone]
+            boneName = boneData['name']
+            boneObj = amt.edit_bones[boneName]        
+            boneObj.parent = amt.edit_bones[parent]
+        
+    bpy.ops.object.mode_set(mode='OBJECT')
+#    for (bname, pname, vector) in boneTable:        
+#        bone = amt.edit_bones.new(bname)
+#        if pname:
+#            parent = amt.edit_bones[pname]
+#            bone.parent = parent
+#            bone.head = parent.tail
+#            bone.use_connect = False
+#            (trans, rot, scale) = parent.matrix.decompose()
+#        else:
+#            bone.head = (0,0,0)
+#            rot = Matrix.Translation((0,0,0))    # identity matrix
+#        bone.tail = rot * Vector(vector) + bone.head
+#    bpy.ops.object.mode_set(mode='OBJECT')
 
 def bCreateSubMeshes(meshData):
     
@@ -511,9 +798,7 @@ def load(operator, context, filepath,
     nameDotMeshDotXml = os.path.split(pathMeshXml)[1].lower()
     nameDotMesh = os.path.splitext(nameDotMeshDotXml)[0]
     onlyName = os.path.splitext(nameDotMesh)[0] 
-    
-    # TODO: here find whether mesh has linked .skeleton
-        
+                
     # material
     nameDotMaterial = onlyName + ".material"
     pathMaterial = os.path.join(folder, nameDotMaterial)
@@ -523,12 +808,36 @@ def load(operator, context, filepath,
             if ".material" in filename:
                 # material file
                 pathMaterial = os.path.join(folder, filename)
-                
+    
     # try to parse xml file
     xDocMeshData = xOpenFile(pathMeshXml)
+    
+    meshData = {}
     if xDocMeshData != "None":
+        # skeleton data
+        # get the mesh as .xml file
+        skeletonFile = xGetSkeletonLink(xDocMeshData, folder)
+        # there is valid skeleton link and existing file
+        if(skeletonFile!="None"):
+            skeletonFileXml = skeletonFile + ".xml"
+            # if there isn't .xml file yet, convert the skeleton file
+            if(fileExist(skeletonFileXml)==False):
+                os.system('%s "%s"' % (ogreXMLconverter, skeletonFile))                
+            # parse .xml skeleton file
+            xDocSkeletonData = xOpenFile(skeletonFileXml)    
+            if xDocSkeletonData != "None":
+                xCollectBoneData(meshData, xDocSkeletonData)
+        
+        # collect mesh data
+        print("collecting mesh data...")
+        xCollectMeshData(meshData, xDocMeshData, onlyName, folder)    
+        xCollectMaterialData(meshData, pathMaterial, folder)
+        
+        # after collecting is done, start creating stuff
+#        # create skeleton
+#        bCreateSkeleton(meshData, onlyName)
         # create a mesh from parsed data
-        CreateMesh(xDocMeshData, folder, onlyName, pathMaterial, pathMeshXml)
+        CreateMesh(meshData, folder, onlyName, pathMaterial, pathMeshXml)
         if not keep_xml:
             # cleanup by deleting the XML file we created
             os.unlink("%s" % pathMeshXml)
