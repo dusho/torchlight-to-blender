@@ -13,7 +13,7 @@ __author__ = "Dusho"
 __version__ = "0.5 06-Mar-2012"
 
 __bpydoc__ = """\
-This script imports Torchlight Ogre models into Blender.
+This script imports/exports Torchlight Ogre models into/from Blender.
 
 Supported:<br>
     * import/export of basic meshes
@@ -213,10 +213,11 @@ def xCollectMeshData(meshData, xmldoc, meshname, dirname):
     
     # collect shared geometry    
     if(len(xmldoc.getElementsByTagName('sharedgeometry')) > 0):
+        isSharedGeometry = True
         for subnodes in xmldoc.getElementsByTagName('sharedgeometry'):
             meshData['sharedgeometry'] = xCollectVertexData(subnodes)
-        for subnodes in xmldoc.getElementsByTagName('sharedgeometry'):
-            meshData['sharedgeometry']['boneassignments'] = xCollectBoneAssignments(meshData, xmldoc)
+        for subnodes in xmldoc.getElementsByTagName('boneassignments'): # TODO: will store just last?
+            meshData['sharedgeometry']['boneassignments'] = xCollectBoneAssignments(meshData, subnodes)
             
     # collect submeshes data       
     for submeshes in xmldoc.getElementsByTagName('submeshes'):
@@ -240,10 +241,9 @@ def xCollectMeshData(meshData, xmldoc, meshname, dirname):
                         vertexcount = int(subnodes.getAttributeNode('vertexcount').value)
                         sm['geometry']=xCollectVertexData(subnodes)
                                                                    
-                    if subnodes.localName == 'boneassignments':
-                         sm['geometry']['boneassignments']=xCollectBoneAssignments(meshData, xmldoc)
-#                        sm.append(collectBoneAssignments(subnodes))    
-#                        sm['boneassignments']=
+                    if subnodes.localName == 'boneassignments' and isSharedGeometry==False:
+                        sm['geometry']['boneassignments']=xCollectBoneAssignments(meshData, subnodes)
+#                       
                         
                 subMeshData.append(sm)
                 
@@ -378,7 +378,7 @@ def xCollectBoneAssignments(meshData, xmldoc):
                 VGNew = VG
             verti = int(vg.getAttributeNode('vertexindex').value)
             weight = float(vg.getAttributeNode('weight').value)
-            
+            #print("bone=%s, vert=%s, weight=%s" % (VGNew,verti,weight))
             VertexGroups[VGNew].append([verti,weight])
             
     return VertexGroups
@@ -435,17 +435,20 @@ def xCollectBoneData(meshData, xDoc):
                 Bone = str(boneparent.getAttributeNode('bone').value)
                 Parent = str(boneparent.getAttributeNode('parent').value)
                 OGRE_Bones[Bone]['parent'] = Parent
-        
+    print("calcBoneChildren")
     #update Ogre bones with list of children
     calcBoneChildren(OGRE_Bones)
     
+    print("calcHelperBones")
     #helper bones
     calcHelperBones(OGRE_Bones)
     calcZeroBones(OGRE_Bones)
     
+    print("calcBoneHeadPositions")
     #update Ogre bones with head positions
     calcBoneHeadPositions(OGRE_Bones)
     
+    print("calcBoneRotations")
     #update Ogre bones with rotation matrices
     calcBoneRotations(OGRE_Bones)
 
@@ -539,6 +542,7 @@ def calcBoneRotations(BonesDic):
         obj = bpy.data.objects.new(bone, None)
         objDic[bone] = obj
         scn.objects.link(obj)
+    print("all objects created")
     #print(bpy.data.objects)
     for bone in BonesDic.keys():
         if 'parent' in BonesDic[bone]:
@@ -548,7 +552,7 @@ def calcBoneRotations(BonesDic):
             object = objDic.get(bone)
             object.parent = Parent
             #Parent.makeParent([object])
-        
+    print("all parents linked")
     for bone in BonesDic.keys():
         obj = objDic.get(bone)
         rot = BonesDic[bone]['rotation']
@@ -564,7 +568,7 @@ def calcBoneRotations(BonesDic):
         obj.rotation_euler = [euler[0],euler[1],euler[2]] # 02
     #Redraw()
     scn.update()
-    
+    print("all objects rotated")
     for bone in BonesDic.keys():
         obj = objDic.get(bone)
         # TODO: need to get rotation matrix out of objects rotation
@@ -576,12 +580,35 @@ def calcBoneRotations(BonesDic):
 #        rotmatAS = Matrix(.matrix_local..getMatrix().rotationPart()
         BonesDic[bone]['rotmatAS'] = rotmatAS
         #print ("CreateEmptys:bone=%s, rotmatAS=%s" % (bone, rotmatAS))
-        
+    print("all matrices stored")
     
-    for bone in BonesDic.keys():
+#    for bone in BonesDic.keys():                          
+#        obj = objDic.get(bone)        
+#        scn.objects.unlink(obj)
+#        del obj
+              
+    # TODO cyclic
+    for bone in BonesDic.keys():         
         obj = objDic.get(bone)
-        scn.objects.unlink(obj)
+#        obj.select = True
+#        #bpy.ops.object.select_name(bone, False)
+#        bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+        scn.objects.unlink(obj) # TODO: cyclic message in console
         del obj
+      
+#    children=1
+#    while children>0:
+#        children=0
+#        for bone in BonesDic.keys():
+#            if('children' in BonesDic[bone].keys()):
+#                if len(BonesDic[bone]['children'])==0:                
+#                    obj = objDic.get(bone)
+#                    scn.objects.unlink(obj)
+#                    del obj
+#                else:
+#                    children+=1
+    
+    print("all objects removed")
 
 def VectorSum(vec1,vec2):
     vecout = [0,0,0]
@@ -599,7 +626,7 @@ def bCreateMesh(meshData, folder, name, materialFile, filepath):
     if 'skeleton' in meshData:
         bCreateSkeleton(meshData, name)
     # from collected data create all sub meshes
-    subObjs = bCreateSubMeshes(meshData)
+    subObjs = bCreateSubMeshes(meshData, name)
     # skin submeshes
     #bSkinMesh(subObjs)
     
@@ -643,35 +670,35 @@ def bCreateMesh(meshData, folder, name, materialFile, filepath):
 #    bpy.ops.object.mode_set(mode='OBJECT')
 #    #return ob
 
-def vec_roll_to_mat3(vec, roll):
-    target = mathutils.Vector((0,1,0))
-    nor = vec.normalized()
-    axis = target.cross(nor)
-    if axis.dot(axis) > 0.0000000001: # this seems to be the problem for some bones, no idea how to fix
-        axis.normalize()
-        theta = target.angle(nor)
-        bMatrix = mathutils.Matrix.Rotation(theta, 3, axis)
-    else:
-        updown = 1 if target.dot(nor) > 0 else -1
-        bMatrix = mathutils.Matrix.Scale(updown, 3)
-        
-        # C code:
-        #bMatrix[0][0]=updown; bMatrix[1][0]=0.0;    bMatrix[2][0]=0.0;
-        #bMatrix[0][1]=0.0;    bMatrix[1][1]=updown; bMatrix[2][1]=0.0;
-        #bMatrix[0][2]=0.0;    bMatrix[1][2]=0.0;    bMatrix[2][2]=1.0;
-        bMatrix[2][2] = 1.0
-        
-    rMatrix = mathutils.Matrix.Rotation(roll, 3, nor)
-    mat = rMatrix * bMatrix
-    return mat
-
-def mat3_to_vec_roll(mat):
-    vec = mat.col[1]
-    vecmat = vec_roll_to_mat3(mat.col[1], 0)
-    vecmatinv = vecmat.inverted()
-    rollmat = vecmatinv * mat
-    roll = math.atan2(rollmat[0][2], rollmat[2][2])
-    return vec, roll
+#def vec_roll_to_mat3(vec, roll):
+#    target = mathutils.Vector((0,1,0))
+#    nor = vec.normalized()
+#    axis = target.cross(nor)
+#    if axis.dot(axis) > 0.0000000001: # this seems to be the problem for some bones, no idea how to fix
+#        axis.normalize()
+#        theta = target.angle(nor)
+#        bMatrix = mathutils.Matrix.Rotation(theta, 3, axis)
+#    else:
+#        updown = 1 if target.dot(nor) > 0 else -1
+#        bMatrix = mathutils.Matrix.Scale(updown, 3)
+#        
+#        # C code:
+#        #bMatrix[0][0]=updown; bMatrix[1][0]=0.0;    bMatrix[2][0]=0.0;
+#        #bMatrix[0][1]=0.0;    bMatrix[1][1]=updown; bMatrix[2][1]=0.0;
+#        #bMatrix[0][2]=0.0;    bMatrix[1][2]=0.0;    bMatrix[2][2]=1.0;
+#        bMatrix[2][2] = 1.0
+#        
+#    rMatrix = mathutils.Matrix.Rotation(roll, 3, nor)
+#    mat = rMatrix * bMatrix
+#    return mat
+#
+#def mat3_to_vec_roll(mat):
+#    vec = mat.col[1]
+#    vecmat = vec_roll_to_mat3(mat.col[1], 0)
+#    vecmatinv = vecmat.inverted()
+#    rollmat = vecmatinv * mat
+#    roll = math.atan2(rollmat[0][2], rollmat[2][2])
+#    return vec, roll
     
 def bCreateSkeleton(meshData, name):
     
@@ -805,7 +832,7 @@ def bCreateSkeleton(meshData, name):
 #        bone.tail = rot * Vector(vector) + bone.head
 #    bpy.ops.object.mode_set(mode='OBJECT')
 
-def bCreateSubMeshes(meshData):
+def bCreateSubMeshes(meshData, meshName):
     
     allObjects = []
     submeshes = meshData['submeshes']
@@ -916,6 +943,22 @@ def bCreateSubMeshes(meshData):
                     col.g = int(vcol[1]*255)
                     col.b = int(vcol[2]*255)
                     col.a = int(vcol[3]*255)
+        
+        # bone assignments:
+        if 'skeleton' in meshData:
+            if 'boneassignments' in geometry.keys():
+                vgroups = geometry['boneassignments']
+                for vgname, vgroup in vgroups.items():
+                    #print("creating VGroup %s" % vgname)
+                    grp = ob.vertex_groups.new(vgname)
+                    for (v, w) in vgroup:
+                        grp.add([v], w, 'REPLACE')
+            # Give mesh object an armature modifier, using vertex groups but
+            # not envelopes
+            mod = ob.modifiers.new('MyRigModif', 'ARMATURE')
+            mod.object = bpy.data.objects[meshName] # gets the rig object
+            mod.use_bone_envelopes = False
+            mod.use_vertex_groups = True
         
         bpy.ops.object.editmode_toggle()
         bpy.ops.mesh.faces_shade_smooth()

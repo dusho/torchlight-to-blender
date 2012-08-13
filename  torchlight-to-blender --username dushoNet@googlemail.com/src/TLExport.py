@@ -13,7 +13,7 @@ __author__ = "Dusho"
 __version__ = "0.5 06-Mar-2012"
 
 __bpydoc__ = """\
-This script imports Torchlight Ogre models into Blender.
+This script imports/exports Torchlight Ogre models into/from Blender.
 
 Supported:<br>
     * import/export of basic meshes
