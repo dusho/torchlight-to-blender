@@ -77,8 +77,9 @@ from mathutils import Vector, Matrix
 import math
 import os
 
-SHOW_IMPORT_DUMPS = False
+SHOW_IMPORT_DUMPS = True
 SHOW_IMPORT_TRACE = False
+DEFAULT_KEEP_XML = True
 # default blender version of script
 blender_version = 259
 
@@ -593,18 +594,22 @@ def calcBoneRotations(BonesDic):
 #        obj.select = True
 #        #bpy.ops.object.select_name(bone, False)
 #        bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
-        scn.objects.unlink(obj) # TODO: cyclic message in console
-        del obj
-      
+        scn.objects.unlink(obj) # TODO: cyclic message in console    
+        #del obj        
+        #bpy.context.scene.objects.unlink(obj)
+        bpy.data.objects.remove(obj)
+    
+#    removedObj = {}  
 #    children=1
 #    while children>0:
 #        children=0
 #        for bone in BonesDic.keys():
-#            if('children' in BonesDic[bone].keys()):
+#            if('children' in BonesDic[bone].keys() and bone not in removedObj):
 #                if len(BonesDic[bone]['children'])==0:                
 #                    obj = objDic.get(bone)
 #                    scn.objects.unlink(obj)
 #                    del obj
+#                    removedObj[bone]=True
 #                else:
 #                    children+=1
     
@@ -980,7 +985,7 @@ def bCreateSubMeshes(meshData, meshName):
 
 def load(operator, context, filepath,       
          ogreXMLconverter=None,
-         keep_xml=False,):
+         keep_xml=DEFAULT_KEEP_XML,):
     
     global blender_version
     

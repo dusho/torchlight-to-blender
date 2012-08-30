@@ -44,7 +44,10 @@ from mathutils import Vector, Matrix
 #import math
 import os
 
-SHOW_EXPORT_DUMPS = False
+SHOW_EXPORT_DUMPS = True
+SHOW_EXPORT_TRACE = True
+SHOW_EXPORT_TRACE_VX = False
+DEFAULT_KEEP_XML = True
 
 class VertexInfo(object):
     def __init__(self, px,py,pz, nx,ny,nz, u,v):        
@@ -68,6 +71,348 @@ class VertexInfo(object):
 #    def __hash__(self):
 #        return hash(self.px) ^ hash(self.py) ^ hash(self.pz) ^ hash(self.nx) ^ hash(self.ny) ^ hash(self.nz)
 #        
+########################################
+
+class Bone(object):
+    ''' EditBone
+    ['__doc__', '__module__', '__slots__', 'align_orientation', 'align_roll', 'bbone_in', 'bbone_out', 'bbone_segments', 'bl_rna', 'envelope_distance', 'envelope_weight', 'head', 'head_radius', 'hide', 'hide_select', 'layers', 'lock', 'matrix', 'name', 'parent', 'rna_type', 'roll', 'select', 'select_head', 'select_tail', 'show_wire', 'tail', 'tail_radius', 'transform', 'use_connect', 'use_cyclic_offset', 'use_deform', 'use_envelope_multiply', 'use_inherit_rotation', 'use_inherit_scale', 'use_local_location']
+    '''
+
+    def __init__(self, matrix, pbone, skeleton):
+        self.fixUpAxis = True
+        self.flipMat = Matrix(((1,0,0,0),(0,0,1,0),(0,1,0,0),(0,0,0,1)))
+#        if OPTIONS['SWAP_AXIS'] == 'xyz':
+#            self.fixUpAxis = False
+#
+#        else:
+#            self.fixUpAxis = True
+#            if OPTIONS['SWAP_AXIS'] == '-xzy':      # Tundra1
+#                self.flipMat = mathutils.Matrix(((-1,0,0,0),(0,0,1,0),(0,1,0,0),(0,0,0,1)))
+#            elif OPTIONS['SWAP_AXIS'] == 'xz-y':    # Tundra2
+#                self.flipMat = mathutils.Matrix(((1,0,0,0),(0,0,1,0),(0,1,0,0),(0,0,0,1)))
+#            else:
+#                print( 'ERROR: axis swap mode not supported with armature animation' )
+#                assert 0
+
+        self.skeleton = skeleton
+        self.name = pbone.name
+        #self.matrix = self.flipMat * matrix
+        self.matrix = matrix
+        self.bone = pbone        # safe to hold pointer to pose bone, not edit bone!
+        if not pbone.bone.use_deform: print('warning: bone <%s> is non-deformabled, this is inefficient!' %self.name)
+        #TODO test#if pbone.bone.use_inherit_scale: print('warning: bone <%s> is using inherit scaling, Ogre has no support for this' %self.name)
+        self.parent = pbone.parent
+        self.children = []
+
+    def update(self):        # called on frame update
+        pose =  self.bone.matrix.copy()
+        #pose = self.bone.matrix * self.skeleton.object_space_transformation
+        #pose =  self.skeleton.object_space_transformation * self.bone.matrix
+        self._inverse_total_trans_pose = pose.inverted()
+
+        # calculate difference to parent bone
+        if self.parent:
+            pose = self.parent._inverse_total_trans_pose* pose
+        elif self.fixUpAxis:
+            #pose = mathutils.Matrix(((1,0,0,0),(0,0,-1,0),(0,1,0,0),(0,0,0,1))) * pose   # Requiered for Blender SVN > 2.56
+            pose = self.flipMat * pose
+        else:
+            pass
+
+        # get transformation values
+        # translation relative to parent coordinate system orientation
+        # and as difference to rest pose translation
+        #blender2.49#translation -= self.ogreRestPose.translationPart()
+        self.pose_location =  pose.to_translation()  -  self.ogre_rest_matrix.to_translation()
+
+        # rotation (and scale) relative to local coordiante system
+        # calculate difference to rest pose
+        #blender2.49#poseTransformation *= self.inverseOgreRestPose
+        #pose = pose * self.inverse_ogre_rest_matrix        # this was wrong, fixed Dec3rd
+        pose = self.inverse_ogre_rest_matrix * pose
+        self.pose_rotation = pose.to_quaternion()
+        self.pose_scale = pose.to_scale()
+
+        #self.pose_location = self.bone.location.copy()
+        #self.pose_rotation = self.bone.rotation_quaternion.copy()
+        for child in self.children: child.update()
+
+
+    def rebuild_tree( self ):        # called first on all bones
+        if self.parent:
+            self.parent = self.skeleton.get_bone( self.parent.name )
+            self.parent.children.append( self )
+
+    def compute_rest( self ):    # called after rebuild_tree, recursive roots to leaves
+        if self.parent:
+            inverseParentMatrix = self.parent.inverse_total_trans
+        elif self.fixUpAxis:
+            inverseParentMatrix = self.flipMat
+        else:
+            inverseParentMatrix = Matrix(((1,0,0,0),(0,1,0,0),(0,0,1,0),(0,0,0,1)))
+
+        # bone matrix relative to armature object
+        self.ogre_rest_matrix = self.matrix.copy()
+        # relative to mesh object origin
+        #self.ogre_rest_matrix *= self.skeleton.object_space_transformation        # 2.49 style
+
+        ##not correct - june18##self.ogre_rest_matrix = self.skeleton.object_space_transformation * self.ogre_rest_matrix
+        #self.ogre_rest_matrix -= self.skeleton.object_space_transformation
+
+
+        # store total inverse transformation
+        self.inverse_total_trans = self.ogre_rest_matrix.inverted()
+
+        # relative to OGRE parent bone origin
+        #self.ogre_rest_matrix *= inverseParentMatrix        # 2.49 style
+        self.ogre_rest_matrix = inverseParentMatrix * self.ogre_rest_matrix
+        self.inverse_ogre_rest_matrix = self.ogre_rest_matrix.inverted()
+
+        ## recursion ##
+        for child in self.children:
+            child.compute_rest()
+
+class Skeleton(object):
+    def get_bone( self, name ):
+        for b in self.bones:
+            if b.name == name: return b
+
+    def __init__(self, ob ):
+        self.object = ob
+        self.bones = []
+        mats = {}
+        self.arm = arm = ob.find_armature()
+        arm.hide = False
+        self._restore_layers = list(arm.layers)
+        #arm.layers = [True]*20      # can not have anything hidden - REQUIRED?
+        prev = bpy.context.scene.objects.active
+        bpy.context.scene.objects.active = arm        # arm needs to be in edit mode to get to .edit_bones
+        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+        bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+        for bone in arm.data.edit_bones: mats[ bone.name ] = bone.matrix.copy()
+        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+        #bpy.ops.object.mode_set(mode='POSE', toggle=False)
+        bpy.context.scene.objects.active = prev
+        
+        sortedBoneNames = []
+        for pbone in arm.pose.bones:
+            sortedBoneNames.append(pbone.name)
+        
+        sortedBoneNames.sort(key=None, reverse=False)
+        
+        for sbone in sortedBoneNames:
+            mybone = Bone( mats[sbone] ,arm.pose.bones[sbone], self )
+            self.bones.append( mybone )
+
+#        for pbone in arm.pose.bones:
+#            mybone = Bone( mats[pbone.name] ,pbone, self )
+#            self.bones.append( mybone )
+
+#        if arm.name not in Report.armatures: Report.armatures.append( arm.name )
+
+        # additional transformation for root bones:
+        # from armature object space into mesh object space, i.e.,
+        # (x,y,z,w)*AO*MO^(-1)
+        self.object_space_transformation = arm.matrix_local * ob.matrix_local.inverted()
+
+        ## setup bones for Ogre format ##
+        for b in self.bones: b.rebuild_tree()
+        ## walk bones, convert them ##
+        self.roots = []
+        for b in self.bones:
+            if not b.parent:
+                b.compute_rest()
+                self.roots.append( b )
+
+    def to_xml( self ):
+        from xml.dom.minidom import Document
+        
+        _fps = float( bpy.context.scene.render.fps )
+
+        doc = Document()
+        root = doc.createElement('skeleton'); doc.appendChild( root )
+        bones = doc.createElement('bones'); root.appendChild( bones )
+        bh = doc.createElement('bonehierarchy'); root.appendChild( bh )
+        for i,bone in enumerate(self.bones):
+            b = doc.createElement('bone')
+            b.setAttribute('name', bone.name)
+            b.setAttribute('id', str(i) )
+            bones.appendChild( b )
+            mat = bone.ogre_rest_matrix.copy()
+            if bone.parent:
+                bp = doc.createElement('boneparent')
+                bp.setAttribute('bone', bone.name)
+                bp.setAttribute('parent', bone.parent.name)
+                bh.appendChild( bp )
+
+            pos = doc.createElement( 'position' ); b.appendChild( pos )
+            x,y,z = mat.to_translation()
+            pos.setAttribute('x', '%6f' %x )
+            pos.setAttribute('y', '%6f' %y )
+            pos.setAttribute('z', '%6f' %z )
+            rot =  doc.createElement( 'rotation' )        # note "rotation", not "rotate"
+            b.appendChild( rot )
+
+            q = mat.to_quaternion()
+            rot.setAttribute('angle', '%6f' %q.angle )
+            axis = doc.createElement('axis'); rot.appendChild( axis )
+            x,y,z = q.axis
+            axis.setAttribute('x', '%6f' %x )
+            axis.setAttribute('y', '%6f' %y )
+            axis.setAttribute('z', '%6f' %z )
+
+            ## Ogre bones do not have initial scaling? ##
+            ## NOTE: Ogre bones by default do not pass down their scaling in animation,
+            ## so in blender all bones are like 'do-not-inherit-scaling'
+            if 0:
+                scale = doc.createElement('scale'); b.appendChild( scale )
+                x,y,z = swap( mat.to_scale() )
+                scale.setAttribute('x', str(x))
+                scale.setAttribute('y', str(y))
+                scale.setAttribute('z', str(z))
+
+        arm = self.arm
+        if not arm.animation_data or (arm.animation_data and not arm.animation_data.nla_tracks):  # assume animated via constraints and use blender timeline.
+            anims = doc.createElement('animations'); root.appendChild( anims )
+            anim = doc.createElement('animation'); anims.appendChild( anim )
+            tracks = doc.createElement('tracks'); anim.appendChild( tracks )
+            anim.setAttribute('name', 'my_animation')
+            start = bpy.context.scene.frame_start; end = bpy.context.scene.frame_end
+            anim.setAttribute('length', str( (end-start)/_fps ) )
+
+            _keyframes = {}
+            _bonenames_ = []
+            for bone in arm.pose.bones:
+                _bonenames_.append( bone.name )
+                track = doc.createElement('track')
+                track.setAttribute('bone', bone.name)
+                tracks.appendChild( track )
+                keyframes = doc.createElement('keyframes')
+                track.appendChild( keyframes )
+                _keyframes[ bone.name ] = keyframes
+
+            for frame in range( int(start), int(end), bpy.context.scene.frame_step):
+                bpy.context.scene.frame_set(frame)
+                for bone in self.roots: bone.update()
+                print('\t\t Frame:', frame)
+                for bonename in _bonenames_:
+                    bone = self.get_bone( bonename )
+                    _loc = bone.pose_location
+                    _rot = bone.pose_rotation
+                    _scl = bone.pose_scale
+
+                    keyframe = doc.createElement('keyframe')
+                    keyframe.setAttribute('time', str((frame-start)/_fps))
+                    _keyframes[ bonename ].appendChild( keyframe )
+                    trans = doc.createElement('translate')
+                    keyframe.appendChild( trans )
+                    x,y,z = _loc
+                    trans.setAttribute('x', '%6f' %x)
+                    trans.setAttribute('y', '%6f' %y)
+                    trans.setAttribute('z', '%6f' %z)
+
+                    rot =  doc.createElement( 'rotate' )
+                    keyframe.appendChild( rot )
+                    q = _rot
+                    rot.setAttribute('angle', '%6f' %q.angle )
+                    axis = doc.createElement('axis'); rot.appendChild( axis )
+                    x,y,z = q.axis
+                    axis.setAttribute('x', '%6f' %x )
+                    axis.setAttribute('y', '%6f' %y )
+                    axis.setAttribute('z', '%6f' %z )
+
+                    scale = doc.createElement('scale')
+                    keyframe.appendChild( scale )
+                    x,y,z = _scl
+                    scale.setAttribute('x', '%6f' %x)
+                    scale.setAttribute('y', '%6f' %y)
+                    scale.setAttribute('z', '%6f' %z)
+
+
+        elif arm.animation_data:
+            anims = doc.createElement('animations'); root.appendChild( anims )
+#            if not len( arm.animation_data.nla_tracks ):
+#                Report.warnings.append('you must assign an NLA strip to armature (%s) that defines the start and end frames' %arm.name)
+
+            for nla in arm.animation_data.nla_tracks:        # NLA required, lone actions not supported
+                if not len(nla.strips): print( 'skipping empty NLA track: %s' %nla.name ); continue
+                for strip in nla.strips:
+                    anim = doc.createElement('animation'); anims.appendChild( anim )
+                    tracks = doc.createElement('tracks'); anim.appendChild( tracks )
+#                    Report.armature_animations.append( '%s : %s [start frame=%s  end frame=%s]' %(arm.name, nla.name, strip.frame_start, strip.frame_end) )
+
+                    #anim.setAttribute('animation_group', nla.name)        # this is extended xml format not useful?
+                    anim.setAttribute('name', strip.name)                       # USE the action's name
+                    anim.setAttribute('length', str( (strip.frame_end-strip.frame_start)/_fps ) )
+                    ## using the fcurves directly is useless, because:
+                    ## we need to support constraints and the interpolation between keys
+                    ## is Ogre smart enough that if a track only has a set of bones, then blend animation with current animation?
+                    ## the exporter will not be smart enough to know which bones are active for a given track...
+                    ## can hijack blender NLA, user sets a single keyframe for only selected bones, and keys last frame
+                    stripbones = []
+#                    if OPTIONS['EX_ONLY_ANIMATED_BONES']:
+                    if True:
+                        for group in strip.action.groups:        # check if the user has keyed only some of the bones (for anim blending)
+                            if group.name in arm.pose.bones: stripbones.append( group.name )
+
+                        if not stripbones:                                    # otherwise we use all bones
+                            stripbones = [ bone.name for bone in arm.pose.bones ]
+                    else:
+                        stripbones = [ bone.name for bone in arm.pose.bones ]
+
+                    print('NLA-strip:',  nla.name)
+                    _keyframes = {}
+                    for bonename in stripbones:
+                        track = doc.createElement('track')
+                        track.setAttribute('bone', bonename)
+                        tracks.appendChild( track )
+                        keyframes = doc.createElement('keyframes')
+                        track.appendChild( keyframes )
+                        _keyframes[ bonename ] = keyframes
+                        print('\t Bone:', bonename)
+
+                    for frame in range( int(strip.frame_start), int(strip.frame_end), bpy.context.scene.frame_step):
+                        bpy.context.scene.frame_set(frame)
+                        for bone in self.roots: bone.update()
+                        print('\t\t Frame:', frame)
+                        for bonename in stripbones:
+                            bone = self.get_bone( bonename )
+                            _loc = bone.pose_location
+                            _rot = bone.pose_rotation
+                            _scl = bone.pose_scale
+
+                            keyframe = doc.createElement('keyframe')
+                            keyframe.setAttribute('time', str((frame-strip.frame_start)/_fps))
+                            _keyframes[ bonename ].appendChild( keyframe )
+                            trans = doc.createElement('translate')
+                            keyframe.appendChild( trans )
+                            x,y,z = _loc
+                            trans.setAttribute('x', '%6f' %x)
+                            trans.setAttribute('y', '%6f' %y)
+                            trans.setAttribute('z', '%6f' %z)
+
+                            rot =  doc.createElement( 'rotate' )
+                            keyframe.appendChild( rot )
+                            q = _rot
+                            rot.setAttribute('angle', '%6f' %q.angle )
+                            axis = doc.createElement('axis'); rot.appendChild( axis )
+                            x,y,z = q.axis
+                            axis.setAttribute('x', '%6f' %x )
+                            axis.setAttribute('y', '%6f' %y )
+                            axis.setAttribute('z', '%6f' %z )
+
+                            scale = doc.createElement('scale')
+                            keyframe.appendChild( scale )
+                            x,y,z = _scl
+                            scale.setAttribute('x', '%6f' %x)
+                            scale.setAttribute('y', '%6f' %y)
+                            scale.setAttribute('z', '%6f' %z)
+
+        return doc.toprettyxml(indent="    ")
+
+ 
+
+#########################################
 def toFmtStr(number):
     #return str("%0.7f" % number)
     return str(round(number, 7))
@@ -252,8 +597,8 @@ def getVertexIndex(vertexInfo, vertexList):
     vertexList.append(vertexInfo)
     return len(vertexList)-1
 
-def bCollectMeshData(selectedObjects):
-    meshData = {}
+def bCollectMeshData(meshData, selectedObjects):
+    
     subMeshesData = []
     for ob in selectedObjects:
         subMeshData = {}
@@ -283,7 +628,7 @@ def bCollectMeshData(selectedObjects):
             tris.append( (face.vertices[0], face.vertices[1], face.vertices[2]) )
             if(len(face.vertices)>=4):
                 tris.append( (face.vertices[0], face.vertices[2], face.vertices[3]) ) 
-            if SHOW_EXPORT_DUMPS:
+            if SHOW_EXPORT_TRACE:
                     print("_face: "+ str(fidx) + " indices [" + str(list(face.vertices))+ "]")
             for tri in tris:
                 newFaceVx = []                        
@@ -301,19 +646,19 @@ def bCollectMeshData(selectedObjects):
                     nx = vxOb.normal[0] 
                     ny = vxOb.normal[1]
                     nz = vxOb.normal[2]                     
-                    if SHOW_EXPORT_DUMPS:
+                    if SHOW_EXPORT_TRACE_VX:
                         print("_vx: "+ str(vertex)+ " co: "+ str([px,py,pz]) +
                               " no: " + str([nx,ny,nz]) +
                               " uv: " + str([u,v]))
                     vert = VertexInfo(px,py,pz,nx,ny,nz,u,v)
                     newVxIdx = getVertexIndex(vert, vertexList)
                     newFaceVx.append(newVxIdx)
-                    if SHOW_EXPORT_DUMPS:
+                    if SHOW_EXPORT_TRACE_VX:
                         print("Nvx: "+ str(newVxIdx)+ " co: "+ str([px,py,pz]) +
                               " no: " + str([nx,ny,nz]) +
                               " uv: " + str([u,v]))
                 newFaces.append(newFaceVx)
-                if SHOW_EXPORT_DUMPS:
+                if SHOW_EXPORT_TRACE_VX:
                     print("Nface: "+ str(fidx) + " indices [" + str(list(newFaceVx))+ "]")
                   
         # geometry
@@ -332,7 +677,7 @@ def bCollectMeshData(selectedObjects):
             normals.append([vxInfo.nx, vxInfo.ny, vxInfo.nz])
             uvTex.append([[vxInfo.u, vxInfo.v]])
         
-        if SHOW_EXPORT_DUMPS:
+        if SHOW_EXPORT_TRACE:
             print("uvTex")
             print(uvTex)
         
@@ -342,7 +687,12 @@ def bCollectMeshData(selectedObjects):
         print("texcoordsets: " + str(len(mesh.uv_textures)))
         if hasUVData:
             geometry['uvsets'] = uvTex
+            
+        #vertex groups of object
+        boneassignments = {}
         
+        #need bone name to bone ID dict
+        geometry['boneassignments'] = boneassignments
         
         subMeshData['material'] = materialName
         subMeshData['faces'] = faces
@@ -353,6 +703,24 @@ def bCollectMeshData(selectedObjects):
     
     return meshData
 
+def bCollectSkeletonData(blenderMeshData, selectedObjects):
+    
+    #need to collect bones 
+    if SHOW_EXPORT_TRACE:       
+        print("bpy.data.armatures = %s" % bpy.data.armatures)
+    # TODO, for now just take first armature
+    if (len(bpy.data.armatures)>=0):
+        amt = bpy.data.armatures[bpy.data.armatures.keys()[0]]
+        if SHOW_EXPORT_TRACE:
+            print("amt = %s" % amt)
+        armatureName = amt.name 
+        skeleton = {}
+        blenderMeshData['skeleton'] = skeleton
+    
+#        for bone in amt.edit_bones:
+            
+        
+    
 def bCollectMaterialData(blenderMeshData, selectedObjects):
     
     allMaterials = {}
@@ -381,18 +749,34 @@ def bCollectMaterialData(blenderMeshData, selectedObjects):
     
 def SaveMesh(filepath, selectedObjects, overrideMaterialFlag):
     
-     
-    blenderMeshData = bCollectMeshData(selectedObjects)
+    blenderMeshData = {}
     
+    #skeleton
+    bCollectSkeletonData(blenderMeshData, selectedObjects) 
+    #mesh
+    bCollectMeshData(blenderMeshData, selectedObjects)
+    #materials
     bCollectMaterialData(blenderMeshData, selectedObjects)
     
-    print(blenderMeshData['materials'])
+    if SHOW_EXPORT_TRACE:
+        print(blenderMeshData['materials'])
     
     if SHOW_EXPORT_DUMPS:
         dumpFile = filepath + "EDump"    
         fileWr = open(dumpFile, 'w')
         fileWr.write(str(blenderMeshData))    
         fileWr.close() 
+    
+    
+    
+    skel = Skeleton( selectedObjects[0] )
+    data = skel.to_xml()
+    name = selectedObjects[0].data.name
+    #xmlfile = os.path.join(filepath, '%s.skeleton.xml' %name )
+    xmlfile = filepath + "SkeletXML.xml"
+    f = open( xmlfile, 'wb' )
+    f.write( bytes(data,'utf-8') )
+    f.close() 
     
     xSaveMeshData(blenderMeshData, filepath)
     
@@ -401,7 +785,7 @@ def SaveMesh(filepath, selectedObjects, overrideMaterialFlag):
 
 def save(operator, context, filepath,       
          ogreXMLconverter=None,
-         keep_xml=False,
+         keep_xml=DEFAULT_KEEP_XML,
          apply_transform=True,
          overwrite_material=False,):
     
