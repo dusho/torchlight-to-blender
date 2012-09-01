@@ -7,27 +7,34 @@ Group: 'Import/Export'
 Tooltip: 'Import/Export Torchlight OGRE mesh files'
     
 Author: Dusho
+
+Thanks goes to 'goatman' for his port of Ogre export script from 2.49b to 2.5x,
+and 'CCCenturion' for trying to refactor the code to be nicer (to be included)
+
 """
 
 __author__ = "Dusho"
-__version__ = "0.5 06-Mar-2012"
+__version__ = "0.6 01-Sep-2012"
 
 __bpydoc__ = """\
 This script imports/exports Torchlight Ogre models into/from Blender.
 
 Supported:<br>
     * import/export of basic meshes
+    * import of skeleton
+    * import/export of vertex weights (ability to import characters and adjust rigs)
 
 Missing:<br>   
-    * vertex weights
-    * skeletons
+    * skeletons (export)
     * animations
-    * vertex color import/export
+    * vertex color export
+    * search for material in shared file inside folder (problem importing TL buildings)
 
 Known issues:<br>
     * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
      
 History:<br>
+    * v0.6     (01-Sep-2012) - added skeleton import + vertex weights import/export
     * v0.5     (06-Mar-2012) - added material import/export
     * v0.4.1   (29-Feb-2012) - flag for applying transformation, default=true
     * v0.4     (28-Feb-2012) - fixing export when no UV data are present
@@ -78,7 +85,7 @@ import math
 import os
 
 SHOW_IMPORT_DUMPS = True
-SHOW_IMPORT_TRACE = False
+SHOW_IMPORT_TRACE = True
 DEFAULT_KEEP_XML = True
 # default blender version of script
 blender_version = 259
@@ -934,20 +941,38 @@ def bCreateSubMeshes(meshData, meshName):
                             # this will link image to faces
                             uvLayer.data[f.index].image=tex.image
                             #uvLayer.data[f.index].use_image=True
-                        
-        # this probably doesn't work
-        # vertex colors               
+        
+        # vertex colors 
         if 'vertexcolors' in geometry:
-            me.vertex_colors = True        
-            vcolors = geometry['vertexcolors']        
-            for f in me.faces:
-                for k,v in enumerate(f.v):
-                    col = f.col[k]
-                    vcol = vcolors[k]
-                    col.r = int(vcol[0]*255)
-                    col.g = int(vcol[1]*255)
-                    col.b = int(vcol[2]*255)
-                    col.a = int(vcol[3]*255)
+            #for j in range(geometry['texcoordsets']):                
+            colorLayer = me.vertex_colors.new('ColorLayer')            
+            me.vertex_colors.active = colorLayer
+            vcolors = geometry['vertexcolors'] 
+            for f in me.faces:    
+                if 'uvsets' in geometry:                    
+                    colv1 = vcolors[f.vertices[0]]
+                    colv2 = vcolors[f.vertices[1]]
+                    colv3 = vcolors[f.vertices[2]]
+                    #uvco1 = Vector((uvco1sets[j][0],uvco1sets[j][1]))
+                    #uvco2 = Vector((uvco2sets[j][0],uvco2sets[j][1]))
+                    #uvco3 = Vector((uvco3sets[j][0],uvco3sets[j][1]))
+                    colorLayer.data[f.index].color1 = (colv1[0],colv1[1],colv1[2])
+                    colorLayer.data[f.index].color2 = (colv2[0],colv2[1],colv2[2])
+                    colorLayer.data[f.index].color3 = (colv3[0],colv3[1],colv3[2])
+                                        
+#        # this probably doesn't work
+#        # vertex colors               
+#        if 'vertexcolors' in geometry:
+#            #me.vertex_colors = True        
+#            vcolors = geometry['vertexcolors']        
+#            for f in me.faces:
+#                for k,v in enumerate(f.vertices):
+#                    col = f.col[k]
+#                    vcol = vcolors[k]
+#                    col.r = int(vcol[0]*255)
+#                    col.g = int(vcol[1]*255)
+#                    col.b = int(vcol[2]*255)
+#                    col.a = int(vcol[3]*255)
         
         # bone assignments:
         if 'skeleton' in meshData:

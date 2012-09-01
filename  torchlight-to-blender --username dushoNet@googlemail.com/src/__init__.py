@@ -25,27 +25,34 @@ Group: 'Import/Export'
 Tooltip: 'Import/Export Torchlight OGRE mesh files'
     
 Author: Dusho
+
+Thanks goes to 'goatman' for his port of Ogre export script from 2.49b to 2.5x,
+and 'CCCenturion' for trying to refactor the code to be nicer (to be included)
+
 """
 
 __author__ = "Dusho"
-__version__ = "0.5 06-Mar-2012"
+__version__ = "0.6 01-Sep-2012"
 
 __bpydoc__ = """\
-This script imports Torchlight Ogre models into Blender.
+This script imports/exports Torchlight Ogre models into/from Blender.
 
 Supported:<br>
     * import/export of basic meshes
+    * import of skeleton
+    * import/export of vertex weights (ability to import characters and adjust rigs)
 
 Missing:<br>   
-    * vertex weights
-    * skeletons
+    * skeletons (export)
     * animations
-    * vertex color import/export
+    * vertex color export
+    * search for material in shared file inside folder (problem importing TL buildings)
 
 Known issues:<br>
     * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
      
 History:<br>
+    * v0.6     (01-Sep-2012) - added skeleton import + vertex weights import/export
     * v0.5     (06-Mar-2012) - added material import/export
     * v0.4.1   (29-Feb-2012) - flag for applying transformation, default=true
     * v0.4     (28-Feb-2012) - fixing export when no UV data are present
@@ -152,6 +159,12 @@ class ExportTL(bpy.types.Operator, ExportHelper):
             description="Overwrites existing .material file, if present",
             default=False,   
             )
+    
+    export_and_link_skeleton = BoolProperty(
+            name="Export .skeleton",
+            description="Exports new skeleton and links the mesh to this new skeleton",
+            default=False,   
+            )
 
     filter_glob = StringProperty(
             default="*.mesh;*.MESH;.xml;.XML",
@@ -180,6 +193,9 @@ class ExportTL(bpy.types.Operator, ExportHelper):
         
         row = layout.row(align=True)
         row.prop(self, "overwrite_material")
+        
+        row = layout.row(align=True)
+        row.prop(self, "export_and_link_skeleton")
 
 
 def menu_func_import(self, context):

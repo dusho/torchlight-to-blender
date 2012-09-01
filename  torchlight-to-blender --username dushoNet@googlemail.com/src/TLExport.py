@@ -7,27 +7,34 @@ Group: 'Import/Export'
 Tooltip: 'Import/Export Torchlight OGRE mesh files'
     
 Author: Dusho
+
+Thanks goes to 'goatman' for his port of Ogre export script from 2.49b to 2.5x,
+and 'CCCenturion' for trying to refactor the code to be nicer (to be included)
+
 """
 
 __author__ = "Dusho"
-__version__ = "0.5 06-Mar-2012"
+__version__ = "0.6 01-Sep-2012"
 
 __bpydoc__ = """\
 This script imports/exports Torchlight Ogre models into/from Blender.
 
 Supported:<br>
     * import/export of basic meshes
+    * import of skeleton
+    * import/export of vertex weights (ability to import characters and adjust rigs)
 
 Missing:<br>   
-    * vertex weights
-    * skeletons
+    * skeletons (export)
     * animations
-    * vertex color import/export
+    * vertex color export
+    * search for material in shared file inside folder (problem importing TL buildings)
 
 Known issues:<br>
     * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
      
 History:<br>
+    * v0.6     (01-Sep-2012) - added skeleton import + vertex weights import/export
     * v0.5     (06-Mar-2012) - added material import/export
     * v0.4.1   (29-Feb-2012) - flag for applying transformation, default=true
     * v0.4     (28-Feb-2012) - fixing export when no UV data are present
@@ -50,7 +57,7 @@ SHOW_EXPORT_TRACE_VX = False
 DEFAULT_KEEP_XML = True
 
 class VertexInfo(object):
-    def __init__(self, px,py,pz, nx,ny,nz, u,v):        
+    def __init__(self, px,py,pz, nx,ny,nz, u,v,boneWeights):        
         self.px = px
         self.py = py
         self.pz = pz
@@ -58,7 +65,8 @@ class VertexInfo(object):
         self.ny = ny
         self.nz = nz        
         self.u = u
-        self.v = v        
+        self.v = v
+        self.boneWeights = boneWeights        
         
 
     '''does not compare ogre_vidx (and position at the moment) [ no need to compare position ]'''
@@ -78,7 +86,7 @@ class Bone(object):
     ['__doc__', '__module__', '__slots__', 'align_orientation', 'align_roll', 'bbone_in', 'bbone_out', 'bbone_segments', 'bl_rna', 'envelope_distance', 'envelope_weight', 'head', 'head_radius', 'hide', 'hide_select', 'layers', 'lock', 'matrix', 'name', 'parent', 'rna_type', 'roll', 'select', 'select_head', 'select_tail', 'show_wire', 'tail', 'tail_radius', 'transform', 'use_connect', 'use_cyclic_offset', 'use_deform', 'use_envelope_multiply', 'use_inherit_rotation', 'use_inherit_scale', 'use_local_location']
     '''
 
-    def __init__(self, matrix, pbone, skeleton):
+    def __init__(self, matrix, pbone, id, skeleton):
         self.fixUpAxis = True
         self.flipMat = Matrix(((1,0,0,0),(0,0,1,0),(0,1,0,0),(0,0,0,1)))
 #        if OPTIONS['SWAP_AXIS'] == 'xyz':
@@ -96,6 +104,7 @@ class Bone(object):
 
         self.skeleton = skeleton
         self.name = pbone.name
+        self.id = id
         #self.matrix = self.flipMat * matrix
         self.matrix = matrix
         self.bone = pbone        # safe to hold pointer to pose bone, not edit bone!
@@ -194,14 +203,15 @@ class Skeleton(object):
         #bpy.ops.object.mode_set(mode='POSE', toggle=False)
         bpy.context.scene.objects.active = prev
         
+        # sorting the bones here according to name
         sortedBoneNames = []
         for pbone in arm.pose.bones:
             sortedBoneNames.append(pbone.name)
         
         sortedBoneNames.sort(key=None, reverse=False)
         
-        for sbone in sortedBoneNames:
-            mybone = Bone( mats[sbone] ,arm.pose.bones[sbone], self )
+        for i, sbone in enumerate(sortedBoneNames):
+            mybone = Bone( mats[sbone] ,arm.pose.bones[sbone], i, self )
             self.bones.append( mybone )
 
 #        for pbone in arm.pose.bones:
@@ -236,7 +246,7 @@ class Skeleton(object):
         for i,bone in enumerate(self.bones):
             b = doc.createElement('bone')
             b.setAttribute('name', bone.name)
-            b.setAttribute('id', str(i) )
+            b.setAttribute('id', str(bone.id) )
             bones.appendChild( b )
             mat = bone.ogre_rest_matrix.copy()
             if bone.parent:
@@ -271,142 +281,142 @@ class Skeleton(object):
                 scale.setAttribute('y', str(y))
                 scale.setAttribute('z', str(z))
 
-        arm = self.arm
-        if not arm.animation_data or (arm.animation_data and not arm.animation_data.nla_tracks):  # assume animated via constraints and use blender timeline.
-            anims = doc.createElement('animations'); root.appendChild( anims )
-            anim = doc.createElement('animation'); anims.appendChild( anim )
-            tracks = doc.createElement('tracks'); anim.appendChild( tracks )
-            anim.setAttribute('name', 'my_animation')
-            start = bpy.context.scene.frame_start; end = bpy.context.scene.frame_end
-            anim.setAttribute('length', str( (end-start)/_fps ) )
-
-            _keyframes = {}
-            _bonenames_ = []
-            for bone in arm.pose.bones:
-                _bonenames_.append( bone.name )
-                track = doc.createElement('track')
-                track.setAttribute('bone', bone.name)
-                tracks.appendChild( track )
-                keyframes = doc.createElement('keyframes')
-                track.appendChild( keyframes )
-                _keyframes[ bone.name ] = keyframes
-
-            for frame in range( int(start), int(end), bpy.context.scene.frame_step):
-                bpy.context.scene.frame_set(frame)
-                for bone in self.roots: bone.update()
-                print('\t\t Frame:', frame)
-                for bonename in _bonenames_:
-                    bone = self.get_bone( bonename )
-                    _loc = bone.pose_location
-                    _rot = bone.pose_rotation
-                    _scl = bone.pose_scale
-
-                    keyframe = doc.createElement('keyframe')
-                    keyframe.setAttribute('time', str((frame-start)/_fps))
-                    _keyframes[ bonename ].appendChild( keyframe )
-                    trans = doc.createElement('translate')
-                    keyframe.appendChild( trans )
-                    x,y,z = _loc
-                    trans.setAttribute('x', '%6f' %x)
-                    trans.setAttribute('y', '%6f' %y)
-                    trans.setAttribute('z', '%6f' %z)
-
-                    rot =  doc.createElement( 'rotate' )
-                    keyframe.appendChild( rot )
-                    q = _rot
-                    rot.setAttribute('angle', '%6f' %q.angle )
-                    axis = doc.createElement('axis'); rot.appendChild( axis )
-                    x,y,z = q.axis
-                    axis.setAttribute('x', '%6f' %x )
-                    axis.setAttribute('y', '%6f' %y )
-                    axis.setAttribute('z', '%6f' %z )
-
-                    scale = doc.createElement('scale')
-                    keyframe.appendChild( scale )
-                    x,y,z = _scl
-                    scale.setAttribute('x', '%6f' %x)
-                    scale.setAttribute('y', '%6f' %y)
-                    scale.setAttribute('z', '%6f' %z)
-
-
-        elif arm.animation_data:
-            anims = doc.createElement('animations'); root.appendChild( anims )
-#            if not len( arm.animation_data.nla_tracks ):
-#                Report.warnings.append('you must assign an NLA strip to armature (%s) that defines the start and end frames' %arm.name)
-
-            for nla in arm.animation_data.nla_tracks:        # NLA required, lone actions not supported
-                if not len(nla.strips): print( 'skipping empty NLA track: %s' %nla.name ); continue
-                for strip in nla.strips:
-                    anim = doc.createElement('animation'); anims.appendChild( anim )
-                    tracks = doc.createElement('tracks'); anim.appendChild( tracks )
-#                    Report.armature_animations.append( '%s : %s [start frame=%s  end frame=%s]' %(arm.name, nla.name, strip.frame_start, strip.frame_end) )
-
-                    #anim.setAttribute('animation_group', nla.name)        # this is extended xml format not useful?
-                    anim.setAttribute('name', strip.name)                       # USE the action's name
-                    anim.setAttribute('length', str( (strip.frame_end-strip.frame_start)/_fps ) )
-                    ## using the fcurves directly is useless, because:
-                    ## we need to support constraints and the interpolation between keys
-                    ## is Ogre smart enough that if a track only has a set of bones, then blend animation with current animation?
-                    ## the exporter will not be smart enough to know which bones are active for a given track...
-                    ## can hijack blender NLA, user sets a single keyframe for only selected bones, and keys last frame
-                    stripbones = []
-#                    if OPTIONS['EX_ONLY_ANIMATED_BONES']:
-                    if True:
-                        for group in strip.action.groups:        # check if the user has keyed only some of the bones (for anim blending)
-                            if group.name in arm.pose.bones: stripbones.append( group.name )
-
-                        if not stripbones:                                    # otherwise we use all bones
-                            stripbones = [ bone.name for bone in arm.pose.bones ]
-                    else:
-                        stripbones = [ bone.name for bone in arm.pose.bones ]
-
-                    print('NLA-strip:',  nla.name)
-                    _keyframes = {}
-                    for bonename in stripbones:
-                        track = doc.createElement('track')
-                        track.setAttribute('bone', bonename)
-                        tracks.appendChild( track )
-                        keyframes = doc.createElement('keyframes')
-                        track.appendChild( keyframes )
-                        _keyframes[ bonename ] = keyframes
-                        print('\t Bone:', bonename)
-
-                    for frame in range( int(strip.frame_start), int(strip.frame_end), bpy.context.scene.frame_step):
-                        bpy.context.scene.frame_set(frame)
-                        for bone in self.roots: bone.update()
-                        print('\t\t Frame:', frame)
-                        for bonename in stripbones:
-                            bone = self.get_bone( bonename )
-                            _loc = bone.pose_location
-                            _rot = bone.pose_rotation
-                            _scl = bone.pose_scale
-
-                            keyframe = doc.createElement('keyframe')
-                            keyframe.setAttribute('time', str((frame-strip.frame_start)/_fps))
-                            _keyframes[ bonename ].appendChild( keyframe )
-                            trans = doc.createElement('translate')
-                            keyframe.appendChild( trans )
-                            x,y,z = _loc
-                            trans.setAttribute('x', '%6f' %x)
-                            trans.setAttribute('y', '%6f' %y)
-                            trans.setAttribute('z', '%6f' %z)
-
-                            rot =  doc.createElement( 'rotate' )
-                            keyframe.appendChild( rot )
-                            q = _rot
-                            rot.setAttribute('angle', '%6f' %q.angle )
-                            axis = doc.createElement('axis'); rot.appendChild( axis )
-                            x,y,z = q.axis
-                            axis.setAttribute('x', '%6f' %x )
-                            axis.setAttribute('y', '%6f' %y )
-                            axis.setAttribute('z', '%6f' %z )
-
-                            scale = doc.createElement('scale')
-                            keyframe.appendChild( scale )
-                            x,y,z = _scl
-                            scale.setAttribute('x', '%6f' %x)
-                            scale.setAttribute('y', '%6f' %y)
-                            scale.setAttribute('z', '%6f' %z)
+#        arm = self.arm
+#        if not arm.animation_data or (arm.animation_data and not arm.animation_data.nla_tracks):  # assume animated via constraints and use blender timeline.
+#            anims = doc.createElement('animations'); root.appendChild( anims )
+#            anim = doc.createElement('animation'); anims.appendChild( anim )
+#            tracks = doc.createElement('tracks'); anim.appendChild( tracks )
+#            anim.setAttribute('name', 'my_animation')
+#            start = bpy.context.scene.frame_start; end = bpy.context.scene.frame_end
+#            anim.setAttribute('length', str( (end-start)/_fps ) )
+#
+#            _keyframes = {}
+#            _bonenames_ = []
+#            for bone in arm.pose.bones:
+#                _bonenames_.append( bone.name )
+#                track = doc.createElement('track')
+#                track.setAttribute('bone', bone.name)
+#                tracks.appendChild( track )
+#                keyframes = doc.createElement('keyframes')
+#                track.appendChild( keyframes )
+#                _keyframes[ bone.name ] = keyframes
+#
+#            for frame in range( int(start), int(end), bpy.context.scene.frame_step):
+#                bpy.context.scene.frame_set(frame)
+#                for bone in self.roots: bone.update()
+#                print('\t\t Frame:', frame)
+#                for bonename in _bonenames_:
+#                    bone = self.get_bone( bonename )
+#                    _loc = bone.pose_location
+#                    _rot = bone.pose_rotation
+#                    _scl = bone.pose_scale
+#
+#                    keyframe = doc.createElement('keyframe')
+#                    keyframe.setAttribute('time', str((frame-start)/_fps))
+#                    _keyframes[ bonename ].appendChild( keyframe )
+#                    trans = doc.createElement('translate')
+#                    keyframe.appendChild( trans )
+#                    x,y,z = _loc
+#                    trans.setAttribute('x', '%6f' %x)
+#                    trans.setAttribute('y', '%6f' %y)
+#                    trans.setAttribute('z', '%6f' %z)
+#
+#                    rot =  doc.createElement( 'rotate' )
+#                    keyframe.appendChild( rot )
+#                    q = _rot
+#                    rot.setAttribute('angle', '%6f' %q.angle )
+#                    axis = doc.createElement('axis'); rot.appendChild( axis )
+#                    x,y,z = q.axis
+#                    axis.setAttribute('x', '%6f' %x )
+#                    axis.setAttribute('y', '%6f' %y )
+#                    axis.setAttribute('z', '%6f' %z )
+#
+#                    scale = doc.createElement('scale')
+#                    keyframe.appendChild( scale )
+#                    x,y,z = _scl
+#                    scale.setAttribute('x', '%6f' %x)
+#                    scale.setAttribute('y', '%6f' %y)
+#                    scale.setAttribute('z', '%6f' %z)
+#
+#
+#        elif arm.animation_data:
+#            anims = doc.createElement('animations'); root.appendChild( anims )
+##            if not len( arm.animation_data.nla_tracks ):
+##                Report.warnings.append('you must assign an NLA strip to armature (%s) that defines the start and end frames' %arm.name)
+#
+#            for nla in arm.animation_data.nla_tracks:        # NLA required, lone actions not supported
+#                if not len(nla.strips): print( 'skipping empty NLA track: %s' %nla.name ); continue
+#                for strip in nla.strips:
+#                    anim = doc.createElement('animation'); anims.appendChild( anim )
+#                    tracks = doc.createElement('tracks'); anim.appendChild( tracks )
+##                    Report.armature_animations.append( '%s : %s [start frame=%s  end frame=%s]' %(arm.name, nla.name, strip.frame_start, strip.frame_end) )
+#
+#                    #anim.setAttribute('animation_group', nla.name)        # this is extended xml format not useful?
+#                    anim.setAttribute('name', strip.name)                       # USE the action's name
+#                    anim.setAttribute('length', str( (strip.frame_end-strip.frame_start)/_fps ) )
+#                    ## using the fcurves directly is useless, because:
+#                    ## we need to support constraints and the interpolation between keys
+#                    ## is Ogre smart enough that if a track only has a set of bones, then blend animation with current animation?
+#                    ## the exporter will not be smart enough to know which bones are active for a given track...
+#                    ## can hijack blender NLA, user sets a single keyframe for only selected bones, and keys last frame
+#                    stripbones = []
+##                    if OPTIONS['EX_ONLY_ANIMATED_BONES']:
+#                    if True:
+#                        for group in strip.action.groups:        # check if the user has keyed only some of the bones (for anim blending)
+#                            if group.name in arm.pose.bones: stripbones.append( group.name )
+#
+#                        if not stripbones:                                    # otherwise we use all bones
+#                            stripbones = [ bone.name for bone in arm.pose.bones ]
+#                    else:
+#                        stripbones = [ bone.name for bone in arm.pose.bones ]
+#
+#                    print('NLA-strip:',  nla.name)
+#                    _keyframes = {}
+#                    for bonename in stripbones:
+#                        track = doc.createElement('track')
+#                        track.setAttribute('bone', bonename)
+#                        tracks.appendChild( track )
+#                        keyframes = doc.createElement('keyframes')
+#                        track.appendChild( keyframes )
+#                        _keyframes[ bonename ] = keyframes
+#                        print('\t Bone:', bonename)
+#
+#                    for frame in range( int(strip.frame_start), int(strip.frame_end), bpy.context.scene.frame_step):
+#                        bpy.context.scene.frame_set(frame)
+#                        for bone in self.roots: bone.update()
+#                        print('\t\t Frame:', frame)
+#                        for bonename in stripbones:
+#                            bone = self.get_bone( bonename )
+#                            _loc = bone.pose_location
+#                            _rot = bone.pose_rotation
+#                            _scl = bone.pose_scale
+#
+#                            keyframe = doc.createElement('keyframe')
+#                            keyframe.setAttribute('time', str((frame-strip.frame_start)/_fps))
+#                            _keyframes[ bonename ].appendChild( keyframe )
+#                            trans = doc.createElement('translate')
+#                            keyframe.appendChild( trans )
+#                            x,y,z = _loc
+#                            trans.setAttribute('x', '%6f' %x)
+#                            trans.setAttribute('y', '%6f' %y)
+#                            trans.setAttribute('z', '%6f' %z)
+#
+#                            rot =  doc.createElement( 'rotate' )
+#                            keyframe.appendChild( rot )
+#                            q = _rot
+#                            rot.setAttribute('angle', '%6f' %q.angle )
+#                            axis = doc.createElement('axis'); rot.appendChild( axis )
+#                            x,y,z = q.axis
+#                            axis.setAttribute('x', '%6f' %x )
+#                            axis.setAttribute('y', '%6f' %y )
+#                            axis.setAttribute('z', '%6f' %z )
+#
+#                            scale = doc.createElement('scale')
+#                            keyframe.appendChild( scale )
+#                            x,y,z = _scl
+#                            scale.setAttribute('x', '%6f' %x)
+#                            scale.setAttribute('y', '%6f' %y)
+#                            scale.setAttribute('z', '%6f' %z)
 
         return doc.toprettyxml(indent="    ")
 
@@ -512,8 +522,44 @@ def xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry):
         if 'geometry' in submesh:
             geometry = submesh['geometry']
             xSaveGeometry(geometry, xDoc, xSubMesh, hasSharedGeometry)
+        # boneassignments
+        if 'skeleton' in meshData:
+            skelMeshData = meshData['skeleton']
+            xBoneAssignments = xDoc.createElement("boneassignments")
+            #print(submesh['geometry']['boneassignments'][0])
+            for vxIdx, vxBoneAsg in enumerate(submesh['geometry']['boneassignments']):
+                #print(submesh['geometry']['boneassignments'][vxIdx])
+                #print(vxBoneAsg)
+                for boneAndWeight in vxBoneAsg:
+                    #print(boneAndWeight)
+                    boneName = boneAndWeight[0]
+                    boneWeight = boneAndWeight[1]
+                    xVxBoneassignment = xDoc.createElement("vertexboneassignment")
+                    xVxBoneassignment.setAttribute("vertexindex", str(vxIdx))
+                    #print(boneName)
+                    boneNameToId = skelMeshData['boneIDs']
+                    #print(skelMeshData['boneIDs'])
+                    #print(boneNameToId[boneName])
+                    xVxBoneassignment.setAttribute("boneindex", str(skelMeshData['boneIDs'][boneName]))
+                    xVxBoneassignment.setAttribute("weight", '%6f' % boneWeight)
+                    xBoneAssignments.appendChild(xVxBoneassignment)
+            xSubMesh.appendChild(xBoneAssignments)
+            
+def xSaveSkeletonData(blenderMeshData, filepath):
+    if 'skeleton' in blenderMeshData:
+        skelData = blenderMeshData['skeleton']
+        skel = skelData['instance']
+        data = skel.to_xml()
+        name = skelData['name']
+        #xmlfile = os.path.join(filepath, '%s.skeleton.xml' %name )
+        nameOnly = os.path.splitext(filepath)[0] # removing .mesh
+        xmlfile = nameOnly + ".skeleton.xml"
+        f = open( xmlfile, 'wb' )
+        f.write( bytes(data,'utf-8') )
+        f.close() 
     
-def xSaveMeshData(meshData, filepath):    
+    
+def xSaveMeshData(meshData, filepath, export_and_link_skeleton):    
     from xml.dom.minidom import Document
     
     hasSharedGeometry = False
@@ -531,17 +577,33 @@ def xSaveMeshData(meshData, filepath):
         xSaveGeometry(geometry, xDoc, xMesh, hasSharedGeometry)
     
     xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry)
+    
+    #skeleton link only
+    if 'skeleton' in meshData:
+        xSkeletonlink = xDoc.createElement("skeletonlink")
+        # default skeleton
+        linkSkeletonName = meshData['skeleton']['name']
+        if(export_and_link_skeleton):    
+            nameDotMeshDotXml = os.path.split(filepath)[1].lower()
+            nameDotMesh = os.path.splitext(nameDotMeshDotXml)[0]
+            linkSkeletonName = os.path.splitext(nameDotMesh)[0] 
+        #xSkeletonlink.setAttribute("name", meshData['skeleton']['name']+".skeleton")
+        xSkeletonlink.setAttribute("name", linkSkeletonName+".skeleton")
+        xMesh.appendChild(xSkeletonlink)
    
     # Print our newly created XML    
-    fileWr = open(filepath, 'w') 
+    fileWr = open(filepath + ".xml", 'w') 
     fileWr.write(xDoc.toprettyxml(indent="    ")) # 4 spaces
     #doc.writexml(fileWr, "  ")
     fileWr.close() 
     
 def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag):
     
-    matFile = os.path.splitext(filepath)[0] # removing .xml
-    matFile = os.path.splitext(matFile)[0] + ".material"
+    #print("filepath: %s" % filepath)
+    matFile = os.path.splitext(filepath)[0] # removing .mesh
+    #print("matFile: %s" % matFile)
+    #matFile = os.path.splitext(matFile)[0] + ".material"
+    matFile = matFile + ".material"
     print("material file: %s" % matFile)
     
     isMaterial = True
@@ -628,7 +690,7 @@ def bCollectMeshData(meshData, selectedObjects):
             tris.append( (face.vertices[0], face.vertices[1], face.vertices[2]) )
             if(len(face.vertices)>=4):
                 tris.append( (face.vertices[0], face.vertices[2], face.vertices[3]) ) 
-            if SHOW_EXPORT_TRACE:
+            if SHOW_EXPORT_TRACE_VX:
                     print("_face: "+ str(fidx) + " indices [" + str(list(face.vertices))+ "]")
             for tri in tris:
                 newFaceVx = []                        
@@ -645,12 +707,19 @@ def bCollectMeshData(meshData, selectedObjects):
                     pz = vxOb.co[2]
                     nx = vxOb.normal[0] 
                     ny = vxOb.normal[1]
-                    nz = vxOb.normal[2]                     
+                    nz = vxOb.normal[2]
+                    #vertex groups
+                    boneWeights = {}
+                    for vxGroup in vxOb.groups:
+                        if vxGroup.weight > 0.01:
+                            vg = ob.vertex_groups[ vxGroup.group ]
+                            boneWeights[vg.name]=vxGroup.weight
+                        
                     if SHOW_EXPORT_TRACE_VX:
                         print("_vx: "+ str(vertex)+ " co: "+ str([px,py,pz]) +
                               " no: " + str([nx,ny,nz]) +
                               " uv: " + str([u,v]))
-                    vert = VertexInfo(px,py,pz,nx,ny,nz,u,v)
+                    vert = VertexInfo(px,py,pz,nx,ny,nz,u,v,boneWeights)
                     newVxIdx = getVertexIndex(vert, vertexList)
                     newFaceVx.append(newVxIdx)
                     if SHOW_EXPORT_TRACE_VX:
@@ -669,6 +738,8 @@ def bCollectMeshData(meshData, selectedObjects):
         normals = []
         positions = []
         uvTex = []
+        #vertex groups of object
+        boneAssignments = []
         
         faces = newFaces
         
@@ -676,10 +747,18 @@ def bCollectMeshData(meshData, selectedObjects):
             positions.append([vxInfo.px, vxInfo.py, vxInfo.pz])
             normals.append([vxInfo.nx, vxInfo.ny, vxInfo.nz])
             uvTex.append([[vxInfo.u, vxInfo.v]])
+            
+            boneWeights = []
+            for boneW in vxInfo.boneWeights.keys():
+                boneWeights.append([boneW, vxInfo.boneWeights[boneW]])
+            boneAssignments.append(boneWeights)            
+            #print(boneWeights)
         
-        if SHOW_EXPORT_TRACE:
-            print("uvTex")
+        if SHOW_EXPORT_TRACE_VX:
+            print("uvTex:")
             print(uvTex)
+            print("boneAssignments:")
+            print(boneAssignments)
         
         geometry['positions'] = positions
         geometry['normals'] = normals
@@ -687,12 +766,9 @@ def bCollectMeshData(meshData, selectedObjects):
         print("texcoordsets: " + str(len(mesh.uv_textures)))
         if hasUVData:
             geometry['uvsets'] = uvTex
-            
-        #vertex groups of object
-        boneassignments = {}
-        
+                
         #need bone name to bone ID dict
-        geometry['boneassignments'] = boneassignments
+        geometry['boneassignments'] = boneAssignments
         
         subMeshData['material'] = materialName
         subMeshData['faces'] = faces
@@ -708,17 +784,30 @@ def bCollectSkeletonData(blenderMeshData, selectedObjects):
     #need to collect bones 
     if SHOW_EXPORT_TRACE:       
         print("bpy.data.armatures = %s" % bpy.data.armatures)
-    # TODO, for now just take first armature
-    if (len(bpy.data.armatures)>=0):
-        amt = bpy.data.armatures[bpy.data.armatures.keys()[0]]
+        
+    # TODO, for now just take armature of first selected object
+    #if (len(bpy.data.armatures)>=0):
+    if selectedObjects[0].find_armature():
+        # creates and parses blender skeleton
+        skelInstance = Skeleton( selectedObjects[0] )
+        
+        #amt = bpy.data.armatures[bpy.data.armatures.keys()[0]]
+        amt = selectedObjects[0].find_armature()
         if SHOW_EXPORT_TRACE:
             print("amt = %s" % amt)
         armatureName = amt.name 
         skeleton = {}
+        skeletonNameToID = {}
         blenderMeshData['skeleton'] = skeleton
-    
-#        for bone in amt.edit_bones:
-            
+        skeleton['instance'] = skelInstance
+        skeleton['name'] = armatureName
+        skeleton['boneIDs'] = skeletonNameToID
+        
+        #skeleton name to ID:        
+        for skBone in skelInstance.bones:
+            skeletonNameToID[skBone.name] = str(skBone.id)
+            if SHOW_EXPORT_TRACE:           
+                print("bone=%s, id=%s" % (skBone.name,skBone.id))
         
     
 def bCollectMaterialData(blenderMeshData, selectedObjects):
@@ -747,7 +836,8 @@ def bCollectMaterialData(blenderMeshData, selectedObjects):
                             matInfo['texture'] = mat.texture_slots[0].texture.image.name
     
     
-def SaveMesh(filepath, selectedObjects, overrideMaterialFlag):
+def SaveMesh(filepath, selectedObjects, ogreXMLconverter,
+              overrideMaterialFlag, export_and_link_skeleton, keep_xml):
     
     blenderMeshData = {}
     
@@ -762,37 +852,53 @@ def SaveMesh(filepath, selectedObjects, overrideMaterialFlag):
         print(blenderMeshData['materials'])
     
     if SHOW_EXPORT_DUMPS:
-        dumpFile = filepath + "EDump"    
+        dumpFile = filepath + ".EDump"    
         fileWr = open(dumpFile, 'w')
         fileWr.write(str(blenderMeshData))    
         fileWr.close() 
     
+    #selObj = selectedObjects[0]
     
+    if export_and_link_skeleton:
+        xSaveSkeletonData(blenderMeshData, filepath)  
     
-    skel = Skeleton( selectedObjects[0] )
-    data = skel.to_xml()
-    name = selectedObjects[0].data.name
-    #xmlfile = os.path.join(filepath, '%s.skeleton.xml' %name )
-    xmlfile = filepath + "SkeletXML.xml"
-    f = open( xmlfile, 'wb' )
-    f.write( bytes(data,'utf-8') )
-    f.close() 
-    
-    xSaveMeshData(blenderMeshData, filepath)
+    xSaveMeshData(blenderMeshData, filepath, export_and_link_skeleton)
     
     xSaveMaterialData(filepath, blenderMeshData, overrideMaterialFlag)
     
+    XMLtoOGREConvert(blenderMeshData, filepath, ogreXMLconverter,
+                      export_and_link_skeleton, keep_xml)
+    
+def XMLtoOGREConvert(blenderMeshData, filepath, ogreXMLconverter,
+                     export_and_link_skeleton, keep_xml):
+        
+    if(ogreXMLconverter is not None):
+        # for mesh
+        # use Ogre XML converter  xml -> binary mesh
+        xmlFilepath = filepath + ".xml"
+        os.system('%s "%s"' % (ogreXMLconverter, xmlFilepath))        
+        # remove XML file
+        if keep_xml is False:
+            os.unlink("%s" % xmlFilepath)  
+        if 'skeleton' in blenderMeshData and export_and_link_skeleton:
+            # for skeleton
+            skelFile = os.path.splitext(filepath)[0] # removing .mesh
+            xmlFilepath = skelFile + ".skeleton.xml"
+            print(xmlFilepath)
+            os.system('%s "%s"' % (ogreXMLconverter, xmlFilepath))        
+            # remove XML file
+            if keep_xml is False:
+                os.unlink("%s" % xmlFilepath) 
 
 def save(operator, context, filepath,       
          ogreXMLconverter=None,
          keep_xml=DEFAULT_KEEP_XML,
          apply_transform=True,
-         overwrite_material=False,):
+         overwrite_material=False,
+         export_and_link_skeleton=False,):
     
     print("saving...")
     print(str(filepath))
-    
-    xmlFilepath = filepath + ".xml"
     
     # go to the object mode
     for ob in bpy.data.objects: 
@@ -813,15 +919,9 @@ def save(operator, context, filepath,
         print("No objects selected for export.")
         return ('CANCELLED')
         
-    SaveMesh(xmlFilepath, selectedObjects, overwrite_material)
-        
-    if(ogreXMLconverter is not None):
-        # use Ogre XML converter  xml -> binary mesh
-        os.system('%s "%s"' % (ogreXMLconverter, xmlFilepath))
-        
-        # remove XML file
-        if keep_xml is False:
-            os.unlink("%s" % xmlFilepath)        
+    SaveMesh(filepath, selectedObjects, ogreXMLconverter,
+              overwrite_material, export_and_link_skeleton, keep_xml)
+    
     
     print("done.")
     
