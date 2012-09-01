@@ -46,10 +46,9 @@ Missing:<br>
     * skeletons (export)
     * animations
     * vertex color export
-    * search for material in shared file inside folder (problem importing TL buildings)
 
 Known issues:<br>
-    * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
+    * imported materials will loose certain informations not applicable to Blender when exported
      
 History:<br>
     * v0.6     (01-Sep-2012) - added skeleton import + vertex weights import/export
@@ -161,7 +160,7 @@ class ExportTL(bpy.types.Operator, ExportHelper):
             )
     
     export_and_link_skeleton = BoolProperty(
-            name="Export .skeleton",
+            name="Export .skeleton and link",
             description="Exports new skeleton and links the mesh to this new skeleton",
             default=False,   
             )

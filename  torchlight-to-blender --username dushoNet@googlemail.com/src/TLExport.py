@@ -28,10 +28,9 @@ Missing:<br>
     * skeletons (export)
     * animations
     * vertex color export
-    * search for material in shared file inside folder (problem importing TL buildings)
 
 Known issues:<br>
-    * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
+    * imported materials will loose certain informations not applicable to Blender when exported
      
 History:<br>
     * v0.6     (01-Sep-2012) - added skeleton import + vertex weights import/export
@@ -51,10 +50,10 @@ from mathutils import Vector, Matrix
 #import math
 import os
 
-SHOW_EXPORT_DUMPS = True
-SHOW_EXPORT_TRACE = True
+SHOW_EXPORT_DUMPS = False
+SHOW_EXPORT_TRACE = False
 SHOW_EXPORT_TRACE_VX = False
-DEFAULT_KEEP_XML = True
+DEFAULT_KEEP_XML = False
 
 class VertexInfo(object):
     def __init__(self, px,py,pz, nx,ny,nz, u,v,boneWeights):        
@@ -763,7 +762,8 @@ def bCollectMeshData(meshData, selectedObjects):
         geometry['positions'] = positions
         geometry['normals'] = normals
         geometry['texcoordsets'] = len(mesh.uv_textures)
-        print("texcoordsets: " + str(len(mesh.uv_textures)))
+        if SHOW_EXPORT_TRACE:
+            print("texcoordsets: " + str(len(mesh.uv_textures)))
         if hasUVData:
             geometry['uvsets'] = uvTex
                 
@@ -896,6 +896,10 @@ def save(operator, context, filepath,
          apply_transform=True,
          overwrite_material=False,
          export_and_link_skeleton=False,):
+            
+    # just check if there is extension - .mesh
+    if '.mesh' not in filepath.lower():
+        filepath = filepath + ".mesh"
     
     print("saving...")
     print(str(filepath))

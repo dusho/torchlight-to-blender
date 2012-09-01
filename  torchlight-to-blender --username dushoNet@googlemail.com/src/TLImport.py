@@ -28,10 +28,9 @@ Missing:<br>
     * skeletons (export)
     * animations
     * vertex color export
-    * search for material in shared file inside folder (problem importing TL buildings)
 
 Known issues:<br>
-    * meshes with skeleton info will loose that info (vertex weights, skeleton link, ...)
+    * imported materials will loose certain informations not applicable to Blender when exported
      
 History:<br>
     * v0.6     (01-Sep-2012) - added skeleton import + vertex weights import/export
@@ -61,6 +60,7 @@ MESHDATA:
         [[vertexNumber], [weight]], [[vertexNumber], [weight]],  ..
 ['submeshes'][idx]
         [material] - string (material name)
+        [materialOrg] - original material name - for searching the in shared materials file
         [faces] - vectors with faces [v1,v2,v3]
         [geometry] - identical to 'sharedgeometry' data content   
 ['materials']
@@ -84,9 +84,9 @@ from mathutils import Vector, Matrix
 import math
 import os
 
-SHOW_IMPORT_DUMPS = True
-SHOW_IMPORT_TRACE = True
-DEFAULT_KEEP_XML = True
+SHOW_IMPORT_DUMPS = False
+SHOW_IMPORT_TRACE = False
+DEFAULT_KEEP_XML = False
 # default blender version of script
 blender_version = 259
 
@@ -231,11 +231,12 @@ def xCollectMeshData(meshData, xmldoc, meshname, dirname):
     for submeshes in xmldoc.getElementsByTagName('submeshes'):
         for submesh in submeshes.childNodes:
             if submesh.localName == 'submesh':
-                material = str(submesh.getAttributeNode('material').value)
+                materialOrg = str(submesh.getAttributeNode('material').value)
                 # to avoid Blender naming limit problems
-                material = GetValidBlenderName(material)
+                material = GetValidBlenderName(materialOrg)
                 sm = {}
                 sm['material']=material
+                sm['materialOrg']=materialOrg
                 for subnodes in submesh.childNodes:
                     if subnodes.localName == 'faces':
                         facescount = int(subnodes.getAttributeNode('count').value)                        
@@ -259,109 +260,131 @@ def xCollectMeshData(meshData, xmldoc, meshname, dirname):
             
     return meshData
 
-def xCollectMaterialData(meshData, materialFile, folder):
-    try:
-        filein = open(materialFile)
-    except:
-        print ("Material: File", materialFile, "not found!")
-        return 'None' 
-    data = filein.readlines()
-    filein.close()
-    MaterialDic = {}
+def xCollectMaterialData(meshData, materialFiles, folder):
     
-    count = 0
-    for line in data:
-        if "material" in line:
-            MaterialName = line.split()[1]
-            # to avoid Blender naming limit problems
-            MaterialName = GetValidBlenderName(MaterialName)
-            MaterialDic[MaterialName] = []
-            count = 0
-        if "{" in line:
-            count += 1
-        if  count > 0:
-            MaterialDic[MaterialName].append(line)
-        if "}" in line:
-            count -= 1
+    data = None
+    if len(materialFiles)==1:
+        materialFile = materialFiles[0]    
+        try:
+            filein = open(materialFile)
+        except:
+            print ("Material: File", materialFile, "not found!")
+            return 'None' 
+        data = filein.readlines()
+        filein.close()
+    else:        
+        #we have multiple material files, so check them for required materials
+        #pick one material from meshData
+        if(len(meshData['submeshes'])>0):
+            # take only first material
+            firstMaterial = meshData['submeshes'][0]['materialOrg']
+                
+            materialFound = False
+            for matFile in materialFiles:
+                try:
+                    filein = open(matFile)
+                except:
+                    print ("Material: File", matFile, "not found!")
+                    return 'None' 
+                data = filein.readlines()
+                filein.close()
+                # try to find material name in file
+                materialFound = False
+                for line in data:
+                    if firstMaterial in line:
+                        materialFound = True
+                        break
+                
+                if materialFound:
+                    print("Material '%s' found in '%s'" % (firstMaterial, matFile))
+                    break
+            # material is not found at all
+            if not materialFound:
+                data = None
+           
+    MaterialDic = {}
     allMaterials = {}
-    #print(MaterialDic)
-    for Material in MaterialDic.keys():
+    
+    #no material data, so just return     
+    if data!=None:
         count = 0
-        matDict = {}
-        allMaterials[Material] = matDict   
-        if SHOW_IMPORT_TRACE:     
-            print ("Materialname: ", Material)
-        for line in MaterialDic[Material]:
-            #if "texture_unit" in line:
-                #allMaterials[Material] = ""
-                #count = 0
+        for line in data:
+            if "material" in line:
+                MaterialName = line.split()[1]
+                # to avoid Blender naming limit problems
+                MaterialName = GetValidBlenderName(MaterialName)
+                MaterialDic[MaterialName] = []
+                count = 0
             if "{" in line:
-                count+=1
-            # texture
-            if (count > 0) and ("texture " in line):
-                file = os.path.join(folder, (line.split()[1]))                        
-                if(not os.path.isfile(file)):
-                    # just force to use .dds if there isn't file specified in material file
-                    file = os.path.join(folder, os.path.splitext((line.split()[1]))[0] + ".dds")
-                matDict['texture'] = file
-            # ambient color
-            if(count>0) and ("ambient" in line):
-                lineSplit = line.split()
-                if len(lineSplit)>=4:
-                    r=float(lineSplit[1])
-                    g=float(lineSplit[2])
-                    b=float(lineSplit[3])
-                    matDict['ambient'] = [r,g,b]
-            # diffuse color        
-            if(count>0) and ("diffuse" in line):
-                lineSplit = line.split()
-                if len(lineSplit)>=4:
-                    r=float(lineSplit[1])
-                    g=float(lineSplit[2])
-                    b=float(lineSplit[3])
-                    matDict['diffuse'] = [r,g,b]
-                    
-            # specular color        
-            if(count>0) and ("specular" in line):
-                lineSplit = line.split()
-                if len(lineSplit)>=4:
-                    r=float(lineSplit[1])
-                    g=float(lineSplit[2])
-                    b=float(lineSplit[3])
-                    matDict['specular'] = [r,g,b]
-                    
-            # emissive color        
-            if(count>0) and ("emissive" in line):
-                lineSplit = line.split()
-                if len(lineSplit)>=4:
-                    r=float(lineSplit[1])
-                    g=float(lineSplit[2])
-                    b=float(lineSplit[3])
-                    matDict['emissive'] = [r,g,b]
-                                    
+                count += 1
+            if  count > 0:
+                MaterialDic[MaterialName].append(line)
             if "}" in line:
-                count-=1
+                count -= 1
+        
+        #print(MaterialDic)
+        for Material in MaterialDic.keys():
+            count = 0
+            matDict = {}
+            allMaterials[Material] = matDict   
+            if SHOW_IMPORT_TRACE:     
+                print ("Materialname: ", Material)
+            for line in MaterialDic[Material]:
+                #if "texture_unit" in line:
+                    #allMaterials[Material] = ""
+                    #count = 0
+                if "{" in line:
+                    count+=1
+                # texture
+                if (count > 0) and ("texture " in line) and ('texture' not in matDict):
+                    file = os.path.join(folder, (line.split()[1]))                        
+                    if(not os.path.isfile(file)):
+                        # just force to use .dds if there isn't file specified in material file
+                        file = os.path.join(folder, os.path.splitext((line.split()[1]))[0] + ".dds")
+                    matDict['texture'] = file
+                # ambient color
+                if(count>0) and ("ambient" in line):
+                    lineSplit = line.split()
+                    if len(lineSplit)>=4:
+                        r=float(lineSplit[1])
+                        g=float(lineSplit[2])
+                        b=float(lineSplit[3])
+                        matDict['ambient'] = [r,g,b]
+                # diffuse color        
+                if(count>0) and ("diffuse" in line):
+                    lineSplit = line.split()
+                    if len(lineSplit)>=4:
+                        r=float(lineSplit[1])
+                        g=float(lineSplit[2])
+                        b=float(lineSplit[3])
+                        matDict['diffuse'] = [r,g,b]
+                        
+                # specular color        
+                if(count>0) and ("specular" in line):
+                    lineSplit = line.split()
+                    if len(lineSplit)>=4:
+                        r=float(lineSplit[1])
+                        g=float(lineSplit[2])
+                        b=float(lineSplit[3])
+                        matDict['specular'] = [r,g,b]
+                        
+                # emissive color        
+                if(count>0) and ("emissive" in line):
+                    lineSplit = line.split()
+                    if len(lineSplit)>=4:
+                        r=float(lineSplit[1])
+                        g=float(lineSplit[2])
+                        b=float(lineSplit[3])
+                        matDict['emissive'] = [r,g,b]
+                                        
+                if "}" in line:
+                    count-=1
     
     # store it into meshData
     meshData['materials']= allMaterials
     if SHOW_IMPORT_TRACE:
         print("allMaterials: %s" % allMaterials)
-    #return Textures
-
-#def xCollectIDToBoneData(xmldoc):
-#    
-#    dicIDToBone = {}
-#
-#    for bones in xmldoc.getElementsByTagName('bones'):
-#    
-#        for bone in bones.childNodes:
-#            if bone.localName == 'bone':
-#                boneName = str(bone.getAttributeNode('name').value)
-#                boneID = int(bone.getAttributeNode('id').value)
-#                dicIDToBone[str(boneID)] = boneName
-#                
-#    return dicIDToBone
-
+ 
 def xCollectBoneAssignments(meshData, xmldoc):
     boneIDtoName = meshData['boneIDs']
     
@@ -443,20 +466,17 @@ def xCollectBoneData(meshData, xDoc):
                 Bone = str(boneparent.getAttributeNode('bone').value)
                 Parent = str(boneparent.getAttributeNode('parent').value)
                 OGRE_Bones[Bone]['parent'] = Parent
-    print("calcBoneChildren")
+    
     #update Ogre bones with list of children
     calcBoneChildren(OGRE_Bones)
     
-    print("calcHelperBones")
     #helper bones
     calcHelperBones(OGRE_Bones)
     calcZeroBones(OGRE_Bones)
     
-    print("calcBoneHeadPositions")
     #update Ogre bones with head positions
     calcBoneHeadPositions(OGRE_Bones)
     
-    print("calcBoneRotations")
     #update Ogre bones with rotation matrices
     calcBoneRotations(OGRE_Bones)
 
@@ -550,7 +570,7 @@ def calcBoneRotations(BonesDic):
         obj = bpy.data.objects.new(bone, None)
         objDic[bone] = obj
         scn.objects.link(obj)
-    print("all objects created")
+    #print("all objects created")
     #print(bpy.data.objects)
     for bone in BonesDic.keys():
         if 'parent' in BonesDic[bone]:
@@ -560,7 +580,7 @@ def calcBoneRotations(BonesDic):
             object = objDic.get(bone)
             object.parent = Parent
             #Parent.makeParent([object])
-    print("all parents linked")
+    #print("all parents linked")
     for bone in BonesDic.keys():
         obj = objDic.get(bone)
         rot = BonesDic[bone]['rotation']
@@ -576,7 +596,7 @@ def calcBoneRotations(BonesDic):
         obj.rotation_euler = [euler[0],euler[1],euler[2]] # 02
     #Redraw()
     scn.update()
-    print("all objects rotated")
+    #print("all objects rotated")
     for bone in BonesDic.keys():
         obj = objDic.get(bone)
         # TODO: need to get rotation matrix out of objects rotation
@@ -588,7 +608,7 @@ def calcBoneRotations(BonesDic):
 #        rotmatAS = Matrix(.matrix_local..getMatrix().rotationPart()
         BonesDic[bone]['rotmatAS'] = rotmatAS
         #print ("CreateEmptys:bone=%s, rotmatAS=%s" % (bone, rotmatAS))
-    print("all matrices stored")
+    #print("all matrices stored")
     
 #    for bone in BonesDic.keys():                          
 #        obj = objDic.get(bone)        
@@ -620,7 +640,7 @@ def calcBoneRotations(BonesDic):
 #                else:
 #                    children+=1
     
-    print("all objects removed")
+    #print("all objects removed")
 
 def VectorSum(vec1,vec2):
     vecout = [0,0,0]
@@ -633,7 +653,7 @@ def VectorSum(vec1,vec2):
 def calcBoneLength(vec):
     return math.sqrt(vec[0]**2+vec[1]**2+vec[2]**2)
                
-def bCreateMesh(meshData, folder, name, materialFile, filepath):
+def bCreateMesh(meshData, folder, name, filepath):
     
     if 'skeleton' in meshData:
         bCreateSkeleton(meshData, name)
@@ -651,73 +671,9 @@ def bCreateMesh(meshData, folder, name, materialFile, filepath):
         fileWr = open(importDump, 'w') 
         fileWr.write(str(meshData))    
         fileWr.close() 
-
-#def createRig(amt, boneTable):
-##    # Create armature and object
-##    bpy.ops.object.add(
-##        type='ARMATURE', 
-##        enter_editmode=True,
-##        location=origin)
-##    ob = bpy.context.object
-##    ob.show_x_ray = True
-##    ob.name = name
-##    amt = ob.data
-##    amt.name = name+'Amt'
-##    amt.show_axes = True
-# 
-#    # Create bones
-#    bpy.ops.object.mode_set(mode='EDIT')
-#    for (bname, pname, vector) in boneTable:        
-#        bone = amt.edit_bones.new(bname)
-#        if pname:
-#            parent = amt.edit_bones[pname]
-#            bone.parent = parent
-#            bone.head = parent.tail
-#            bone.use_connect = False
-#            (trans, rot, scale) = parent.matrix.decompose()
-#        else:
-#            bone.head = (0,0,0)
-#            rot = Matrix.Translation((0,0,0))    # identity matrix
-#        bone.tail = rot * Vector(vector) + bone.head
-#    bpy.ops.object.mode_set(mode='OBJECT')
-#    #return ob
-
-#def vec_roll_to_mat3(vec, roll):
-#    target = mathutils.Vector((0,1,0))
-#    nor = vec.normalized()
-#    axis = target.cross(nor)
-#    if axis.dot(axis) > 0.0000000001: # this seems to be the problem for some bones, no idea how to fix
-#        axis.normalize()
-#        theta = target.angle(nor)
-#        bMatrix = mathutils.Matrix.Rotation(theta, 3, axis)
-#    else:
-#        updown = 1 if target.dot(nor) > 0 else -1
-#        bMatrix = mathutils.Matrix.Scale(updown, 3)
-#        
-#        # C code:
-#        #bMatrix[0][0]=updown; bMatrix[1][0]=0.0;    bMatrix[2][0]=0.0;
-#        #bMatrix[0][1]=0.0;    bMatrix[1][1]=updown; bMatrix[2][1]=0.0;
-#        #bMatrix[0][2]=0.0;    bMatrix[1][2]=0.0;    bMatrix[2][2]=1.0;
-#        bMatrix[2][2] = 1.0
-#        
-#    rMatrix = mathutils.Matrix.Rotation(roll, 3, nor)
-#    mat = rMatrix * bMatrix
-#    return mat
-#
-#def mat3_to_vec_roll(mat):
-#    vec = mat.col[1]
-#    vecmat = vec_roll_to_mat3(mat.col[1], 0)
-#    vecmatinv = vecmat.inverted()
-#    rollmat = vecmatinv * mat
-#    roll = math.atan2(rollmat[0][2], rollmat[2][2])
-#    return vec, roll
     
 def bCreateSkeleton(meshData, name):
     
-#    obj = Object.New('Armature',name)
-#    arm = Armature.New(name)
-#    obj.link(arm)
-#    scn.link(obj)
     if 'skeleton' not in meshData:
         return
     bonesData = meshData['skeleton']
@@ -733,13 +689,6 @@ def bCreateSkeleton(meshData, name):
     scn.objects.link(rig)
     scn.objects.active = rig
     scn.update()
-    
-#    boneTable1 = [
-#        ('Base', None, (1,0,0)),
-#        ('Mid', 'Base', (1,0,0)),
-#        ('Tip', 'Mid', (0,0,1))
-#    ]
-#    bent = createRig(amt, boneTable1)
     
     bpy.ops.object.mode_set(mode='EDIT')
     for bone in bonesData.keys():
@@ -822,12 +771,6 @@ def bCreateSkeleton(meshData, name):
         if 'flag' in bonesData[bone].keys():                      
             #print ("deleting bone=%s" % bone)          
             bpy.context.object.data.edit_bones.remove(amt.edit_bones[bone])            
-    
-#    for bone in arm.bones.keys():
-#        if BonesDic[bone].has_key('flag'):
-#            arm.makeEditable()
-#            del arm.bones[bone]
-#            arm.update()
             
     bpy.ops.object.mode_set(mode='OBJECT')
 #    for (bname, pname, vector) in boneTable:        
@@ -952,10 +895,7 @@ def bCreateSubMeshes(meshData, meshName):
                 if 'uvsets' in geometry:                    
                     colv1 = vcolors[f.vertices[0]]
                     colv2 = vcolors[f.vertices[1]]
-                    colv3 = vcolors[f.vertices[2]]
-                    #uvco1 = Vector((uvco1sets[j][0],uvco1sets[j][1]))
-                    #uvco2 = Vector((uvco2sets[j][0],uvco2sets[j][1]))
-                    #uvco3 = Vector((uvco3sets[j][0],uvco3sets[j][1]))
+                    colv3 = vcolors[f.vertices[2]]                    
                     colorLayer.data[f.index].color1 = (colv1[0],colv1[1],colv1[2])
                     colorLayer.data[f.index].color2 = (colv2[0],colv2[1],colv2[2])
                     colorLayer.data[f.index].color3 = (colv3[0],colv3[1],colv3[2])
@@ -1040,6 +980,7 @@ def load(operator, context, filepath,
     onlyName = os.path.splitext(nameDotMesh)[0] 
                 
     # material
+    meshMaterials = []
     nameDotMaterial = onlyName + ".material"
     pathMaterial = os.path.join(folder, nameDotMaterial)
     if fileExist(pathMaterial)==False:
@@ -1048,6 +989,10 @@ def load(operator, context, filepath,
             if ".material" in filename:
                 # material file
                 pathMaterial = os.path.join(folder, filename)
+                meshMaterials.append(pathMaterial)
+                #print("alternative material file: %s" % pathMaterial)
+    else:
+        meshMaterials.append(pathMaterial)
     
     # try to parse xml file
     xDocMeshData = xOpenFile(pathMeshXml)
@@ -1071,13 +1016,11 @@ def load(operator, context, filepath,
         # collect mesh data
         print("collecting mesh data...")
         xCollectMeshData(meshData, xDocMeshData, onlyName, folder)    
-        xCollectMaterialData(meshData, pathMaterial, folder)
+        xCollectMaterialData(meshData, meshMaterials, folder)
         
-        # after collecting is done, start creating stuff
-#        # create skeleton
-#        bCreateSkeleton(meshData, onlyName)
-        # create a mesh from parsed data
-        bCreateMesh(meshData, folder, onlyName, pathMaterial, pathMeshXml)
+        # after collecting is done, start creating stuff#        
+        # create skeleton (if any) and mesh from parsed data
+        bCreateMesh(meshData, folder, onlyName, pathMeshXml)
         if not keep_xml:
             # cleanup by deleting the XML file we created
             os.unlink("%s" % pathMeshXml)
