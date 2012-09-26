@@ -32,7 +32,7 @@ and 'CCCenturion' for trying to refactor the code to be nicer (to be included)
 """
 
 __author__ = "Dusho"
-__version__ = "0.6 01-Sep-2012"
+__version__ = "0.6.1 27-Sep-2012"
 
 __bpydoc__ = """\
 This script imports/exports Torchlight Ogre models into/from Blender.
@@ -51,6 +51,7 @@ Known issues:<br>
     * imported materials will loose certain informations not applicable to Blender when exported
      
 History:<br>
+    * v0.6.1   (27-Sep-2012) - updated to work with Blender 2.63a
     * v0.6     (01-Sep-2012) - added skeleton import + vertex weights import/export
     * v0.5     (06-Mar-2012) - added material import/export
     * v0.4.1   (29-Feb-2012) - flag for applying transformation, default=true

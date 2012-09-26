@@ -2,7 +2,7 @@
 
 """
 Name: 'OGRE for Torchlight (*.MESH)'
-Blender: 2.59 and 2.62
+Blender: 2.59, 2.62, 2.63a
 Group: 'Import/Export'
 Tooltip: 'Import/Export Torchlight OGRE mesh files'
     
@@ -14,7 +14,7 @@ and 'CCCenturion' for trying to refactor the code to be nicer (to be included)
 """
 
 __author__ = "Dusho"
-__version__ = "0.6 01-Sep-2012"
+__version__ = "0.6.1 27-Sep-2012"
 
 __bpydoc__ = """\
 This script imports/exports Torchlight Ogre models into/from Blender.
@@ -33,6 +33,7 @@ Known issues:<br>
     * imported materials will loose certain informations not applicable to Blender when exported
      
 History:<br>
+    * v0.6.1   (27-Sep-2012) - updated to work with Blender 2.63a
     * v0.6     (01-Sep-2012) - added skeleton import + vertex weights import/export
     * v0.5     (06-Mar-2012) - added material import/export
     * v0.4.1   (29-Feb-2012) - flag for applying transformation, default=true
@@ -53,7 +54,10 @@ import os
 SHOW_EXPORT_DUMPS = False
 SHOW_EXPORT_TRACE = False
 SHOW_EXPORT_TRACE_VX = False
-DEFAULT_KEEP_XML = False
+DEFAULT_KEEP_XML = True
+
+# default blender version of script
+blender_version = 259
 
 class VertexInfo(object):
     def __init__(self, px,py,pz, nx,ny,nz, u,v,boneWeights):        
@@ -668,13 +672,24 @@ def bCollectMeshData(meshData, selectedObjects):
         #mesh = bpy.types.Mesh ##
         mesh = ob.data     
         
+        # blender 2.62 <-> 2.63 compatibility
+        if(blender_version<=262):
+            meshFaces = mesh.faces
+            meshUV_textures = mesh.uv_textures
+            meshVertex_colors = mesh.vertex_colors
+        elif(blender_version>262): 
+            mesh.update(calc_tessface=True)            
+            meshFaces = mesh.tessfaces 
+            meshUV_textures = mesh.tessface_uv_textures 
+            meshVertex_colors = mesh.tessface_vertex_colors
+        
         # first try to collect UV data
         uvData = []
         hasUVData = False
-        if mesh.uv_textures.active:
+        if meshUV_textures.active:
             hasUVData = True
             #uvLayerTofaceUVdata = {}
-            for layer in mesh.uv_textures:
+            for layer in meshUV_textures:
                 faceIdxToUVdata = {}
                 for fidx, uvface in enumerate(layer.data):               
                     faceIdxToUVdata[fidx] = uvface.uv
@@ -684,7 +699,7 @@ def bCollectMeshData(meshData, selectedObjects):
         vertexList = []        
         newFaces = []
                 
-        for fidx, face in enumerate(mesh.faces):
+        for fidx, face in enumerate(meshFaces):
             tris = []
             tris.append( (face.vertices[0], face.vertices[1], face.vertices[2]) )
             if(len(face.vertices)>=4):
@@ -897,6 +912,10 @@ def save(operator, context, filepath,
          overwrite_material=False,
          export_and_link_skeleton=False,):
             
+    global blender_version
+    
+    blender_version = bpy.app.version[0]*100 + bpy.app.version[1]
+    
     # just check if there is extension - .mesh
     if '.mesh' not in filepath.lower():
         filepath = filepath + ".mesh"

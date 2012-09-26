@@ -27,7 +27,8 @@ def debug_load(self, context, filepath):
     TLImport.load(self, context, filepath, OGRE_XML_CONVERTER)
 
 debug_load(0, bpy.context, "D:\\stuff\\Torchlight_modding\\org_models\\Alchemist\\Alchemist.MESH") 
-debug_save(0, bpy.context, "D:\\stuff\\Torchlight_modding\\org_models\\Alchemist\\Alchemist_expt2.MESH")
+#debug_load(0, bpy.context, "D:\\stuff\\Torchlight_modding\\tilesets\\town1\\plants_birch_trees.Mesh")
+debug_save(0, bpy.context, "D:\\stuff\\Torchlight_modding\\org_models\\Alchemist\\Alchemist_v263_01.MESH")
 #debug_load(0, bpy.context, "D:\\stuff\\Torchlight_modding\\org_models\\firegel\\gel.MESH")
 #debug_save(0, bpy.context, "D:\\stuff\\Torchlight_modding\\org_models\\firegel\\gel_expt2.MESH")
 #debug_load(0, bpy.context, "D:\\stuff\\Torchlight_modding\\TorchED2\\media\\levelSets\\town1\\menu_building_generic1e.Mesh")

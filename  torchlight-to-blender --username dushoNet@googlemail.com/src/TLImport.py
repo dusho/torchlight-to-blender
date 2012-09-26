@@ -2,7 +2,7 @@
 
 """
 Name: 'OGRE for Torchlight (*.MESH)'
-Blender: 2.59 and 2.62
+Blender: 2.59, 2.62, 2.63a
 Group: 'Import/Export'
 Tooltip: 'Import/Export Torchlight OGRE mesh files'
     
@@ -14,7 +14,7 @@ and 'CCCenturion' for trying to refactor the code to be nicer (to be included)
 """
 
 __author__ = "Dusho"
-__version__ = "0.6 01-Sep-2012"
+__version__ = "0.6.1 27-Sep-2012"
 
 __bpydoc__ = """\
 This script imports/exports Torchlight Ogre models into/from Blender.
@@ -33,6 +33,7 @@ Known issues:<br>
     * imported materials will loose certain informations not applicable to Blender when exported
      
 History:<br>
+    * v0.6.1   (27-Sep-2012) - updated to work with Blender 2.63a
     * v0.6     (01-Sep-2012) - added skeleton import + vertex weights import/export
     * v0.5     (06-Mar-2012) - added material import/export
     * v0.4.1   (29-Feb-2012) - flag for applying transformation, default=true
@@ -469,7 +470,7 @@ def xCollectBoneData(meshData, xDoc):
     
     #update Ogre bones with list of children
     calcBoneChildren(OGRE_Bones)
-    
+       
     #helper bones
     calcHelperBones(OGRE_Bones)
     calcZeroBones(OGRE_Bones)
@@ -625,7 +626,8 @@ def calcBoneRotations(BonesDic):
         #del obj        
         #bpy.context.scene.objects.unlink(obj)
         bpy.data.objects.remove(obj)
-    
+        
+    scn.update()
 #    removedObj = {}  
 #    children=1
 #    while children>0:
@@ -714,11 +716,18 @@ def bCreateSkeleton(meshData, name):
         rotmat = boneData['rotmatAS']
         #print(rotmat[1].to_tuple())
         #boneObj.matrix = Matrix(rotmat[1],rotmat[0],rotmat[2])
-        r0 = [rotmat[0].x] + [rotmat[0].y] + [rotmat[0].z]
-        r1 = [rotmat[1].x] + [rotmat[1].y] + [rotmat[1].z]
-        r2 = [rotmat[2].x] + [rotmat[2].y] + [rotmat[2].z]
-        
-        boneRotMatrix = Matrix((r1,r0,r2))
+        if blender_version<=262:                        
+            r0 = [rotmat[0].x] + [rotmat[0].y] + [rotmat[0].z]
+            r1 = [rotmat[1].x] + [rotmat[1].y] + [rotmat[1].z]
+            r2 = [rotmat[2].x] + [rotmat[2].y] + [rotmat[2].z]            
+            boneRotMatrix = Matrix((r1,r0,r2))
+        elif blender_version>262:            
+            # this is fugly was of flipping matrix
+            r0 = [rotmat.col[0].x] + [rotmat.col[0].y] + [rotmat.col[0].z]
+            r1 = [rotmat.col[1].x] + [rotmat.col[1].y] + [rotmat.col[1].z]
+            r2 = [rotmat.col[2].x] + [rotmat.col[2].y] + [rotmat.col[2].z]            
+            tmpR = Matrix((r1,r0,r2))
+            boneRotMatrix = Matrix((tmpR.col[0],tmpR.col[1],tmpR.col[2]))
         
         #pos = Vector([headPos[0],-headPos[2],headPos[1]])
         #axis, roll = mat3_to_vec_roll(boneRotMatrix.to_3x3())
@@ -741,7 +750,9 @@ def bCreateSkeleton(meshData, name):
         #matx = Matrix.Translation(Vector([headPos[0],-headPos[2],headPos[1]]))
         
         boneObj.transform( boneRotMatrix)
+        #scn.update()
         boneObj.translate(Vector([headPos[0],-headPos[2],headPos[1]]))
+        #scn.update()
         #boneObj.translate(Vector([headPos[0],-headPos[2],headPos[1]]))
         #boneObj.head = Vector([headPos[0],-headPos[2],headPos[1]])
         #boneObj.tail = Vector([headPos[0],-headPos[2],headPos[1]]) + (Vector([0,0, tailVector])  * Matrix((r1,r0,r2))) 
@@ -809,23 +820,53 @@ def bCreateSubMeshes(meshData, meshName):
         else:
             geometry = meshData['sharedgeometry']            
           
-
         verts = geometry['positions'] 
-        faces = subMeshData['faces']     
+        faces = subMeshData['faces']
+        hasNormals = False
+        if 'normals' in geometry.keys():
+            normals = geometry['normals']    
+            hasNormals = True 
         # mesh vertices and faces   
-        me.from_pydata(verts, [], faces) 
-        # mesh normals
-        c = 0
-        for v in me.vertices:
-            if 'normals' in geometry.keys():
-                normals = geometry['normals']
-                v.normal = Vector((normals[c][0],normals[c][1],normals[c][2]))
-                c+=1
-        # smooth        
         
-        for f in me.faces:
-            f.use_smooth = True        
-              
+        if(blender_version<=262):
+            # vertices and faces of mesh
+            me.from_pydata(verts, [], faces)      
+            # mesh normals
+            c = 0
+            for v in me.vertices:
+                if hasNormals:                    
+                    v.normal = Vector((normals[c][0],normals[c][1],normals[c][2]))
+                    c+=1       
+        elif(blender_version>262): 
+            # vertices and faces of mesh           
+            VertLength = len(verts)
+            FaceLength = len(faces)
+            me.vertices.add(VertLength)
+            me.tessfaces.add(FaceLength)
+            for i in range(VertLength):
+                me.vertices[i].co=verts[i]
+                if hasNormals:
+                    me.vertices[i].normal = Vector((normals[i][0],normals[i][1],normals[i][2]))
+            #me.vertices[VertLength].co = verts[0]            
+            for i in range(FaceLength):
+                NewFace = (faces[i][0],faces[i][1],faces[i][2],0)                
+                me.tessfaces[i].vertices_raw=NewFace
+            
+        # blender 2.62 <-> 2.63 compatibility
+        if(blender_version<=262):
+            meshFaces = me.faces
+            meshUV_textures = me.uv_textures
+            meshVertex_colors = me.vertex_colors
+        elif(blender_version>262): 
+            meshFaces = me.tessfaces 
+            meshUV_textures = me.tessface_uv_textures 
+            meshVertex_colors = me.tessface_vertex_colors
+            #meshUV_textures = me.uv_textures   
+        
+        # smooth        
+        for f in meshFaces:
+            f.use_smooth = True
+                      
         hasTexture = False
         # material for the submesh
         # Create image texture from image.         
@@ -867,11 +908,11 @@ def bCreateSubMeshes(meshData, meshName):
         # texture coordinates
         if 'texcoordsets' in geometry:
             for j in range(geometry['texcoordsets']):                
-                uvLayer = me.uv_textures.new('UVLayer'+str(j))
+                uvLayer = meshUV_textures.new('UVLayer'+str(j))
                 
-                me.uv_textures.active = uvLayer
+                meshUV_textures.active = uvLayer
             
-                for f in me.faces:    
+                for f in meshFaces:    
                     if 'uvsets' in geometry:
                         uvco1sets = geometry['uvsets'][f.vertices[0]]
                         uvco2sets = geometry['uvsets'][f.vertices[1]]
@@ -888,10 +929,10 @@ def bCreateSubMeshes(meshData, meshName):
         # vertex colors 
         if 'vertexcolors' in geometry:
             #for j in range(geometry['texcoordsets']):                
-            colorLayer = me.vertex_colors.new('ColorLayer')            
-            me.vertex_colors.active = colorLayer
+            colorLayer = meshVertex_colors.new('ColorLayer')            
+            meshVertex_colors.active = colorLayer
             vcolors = geometry['vertexcolors'] 
-            for f in me.faces:    
+            for f in meshFaces:    
                 if 'uvsets' in geometry:                    
                     colv1 = vcolors[f.vertices[0]]
                     colv2 = vcolors[f.vertices[1]]
@@ -930,11 +971,14 @@ def bCreateSubMeshes(meshData, meshName):
             mod.use_bone_envelopes = False
             mod.use_vertex_groups = True
         
+        # Update mesh with new data
+        me.update(calc_edges=True)
+        
         bpy.ops.object.editmode_toggle()
         bpy.ops.mesh.faces_shade_smooth()
         bpy.ops.object.editmode_toggle()
         # Update mesh with new data
-        me.update(calc_edges=True)
+        #me.update(calc_edges=True, calc_tessface=True)
         
         allObjects.append(ob)
         
