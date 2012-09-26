@@ -20,7 +20,7 @@
 
 """
 Name: 'OGRE for Torchlight (*.MESH)'
-Blender: 2.59 and 2.62
+Blender: 2.59, 2.62, 2.63a
 Group: 'Import/Export'
 Tooltip: 'Import/Export Torchlight OGRE mesh files'
     
