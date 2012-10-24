@@ -84,6 +84,7 @@ import bpy
 from mathutils import Vector, Matrix
 import math
 import os
+from bpy_extras.io_utils import unpack_list, unpack_face_list
 
 SHOW_IMPORT_DUMPS = False
 SHOW_IMPORT_TRACE = False
@@ -101,7 +102,7 @@ def GetValidBlenderName(name):
     global blender_version
     
     maxChars = 20
-    if blender_version>262:
+    if blender_version>=262:
         maxChars = 63
     
     newname = name    
@@ -203,6 +204,7 @@ def xCollectVertexData(data):
                         if vt.localName == 'texcoord':
                             u = float(vt.getAttributeNode('u').value)
                             v = -float(vt.getAttributeNode('v').value)+1.0
+                            #v = float(vt.getAttributeNode('v').value)
                             uvcoords.append([u,v])
                                 
                     if len(uvcoords) > 0:
@@ -269,7 +271,7 @@ def xCollectMaterialData(meshData, materialFiles, folder):
         try:
             filein = open(materialFile)
         except:
-            print ("Material: File", materialFile, "not found!")
+            print ("WARNING: Material file ", materialFile, " not found!")
             return 'None' 
         data = filein.readlines()
         filein.close()
@@ -285,7 +287,7 @@ def xCollectMaterialData(meshData, materialFiles, folder):
                 try:
                     filein = open(matFile)
                 except:
-                    print ("Material: File", matFile, "not found!")
+                    print ("WARNING: Material file ", matFile, " not found!")
                     return 'None' 
                 data = filein.readlines()
                 filein.close()
@@ -342,7 +344,12 @@ def xCollectMaterialData(meshData, materialFiles, folder):
                     if(not os.path.isfile(file)):
                         # just force to use .dds if there isn't file specified in material file
                         file = os.path.join(folder, os.path.splitext((line.split()[1]))[0] + ".dds")
-                    matDict['texture'] = file
+                        if(os.path.isfile(file)):
+                            matDict['texture'] = file
+                        else:
+                            print("WARNING: Referenced texture '%s' not found" % file)
+                    else:
+                        matDict['texture'] = file
                 # ambient color
                 if(count>0) and ("ambient" in line):
                     lineSplit = line.split()
@@ -837,7 +844,7 @@ def bCreateSubMeshes(meshData, meshName):
                 if hasNormals:                    
                     v.normal = Vector((normals[c][0],normals[c][1],normals[c][2]))
                     c+=1       
-        elif(blender_version>262): 
+        elif (blender_version>262):
             # vertices and faces of mesh           
             VertLength = len(verts)
             FaceLength = len(faces)
@@ -851,6 +858,11 @@ def bCreateSubMeshes(meshData, meshName):
             for i in range(FaceLength):
                 NewFace = (faces[i][0],faces[i][1],faces[i][2],0)                
                 me.tessfaces[i].vertices_raw=NewFace
+            #me.tessfaces.foreach_set("vertices_raw",unpack_list( faces))
+#        elif (blender_version==264):
+#            print("264 mesh")
+#            # vertices and faces of mesh
+#            me.from_pydata(verts, [], faces)
             
         # blender 2.62 <-> 2.63 compatibility
         if(blender_version<=262):
@@ -904,7 +916,7 @@ def bCreateSubMeshes(meshData, meshName):
             # add material to object
             ob.data.materials.append(mat)
             #print(me.uv_textures[0].data.values()[0].image)       
-            
+        
         # texture coordinates
         if 'texcoordsets' in geometry:
             for j in range(geometry['texcoordsets']):                
@@ -921,6 +933,11 @@ def bCreateSubMeshes(meshData, meshName):
                         uvco2 = Vector((uvco2sets[j][0],uvco2sets[j][1]))
                         uvco3 = Vector((uvco3sets[j][0],uvco3sets[j][1]))
                         uvLayer.data[f.index].uv = (uvco1,uvco2,uvco3)
+                        
+                        print("vx %s = uv %s" % (f.vertices[0], uvco1))  
+                        print("vx %s = uv %s" % (f.vertices[1], uvco2))  
+                        print("vx %s = uv %s" % (f.vertices[2], uvco3))    
+                        
                         if hasTexture:
                             # this will link image to faces
                             uvLayer.data[f.index].image=tex.image
@@ -972,6 +989,7 @@ def bCreateSubMeshes(meshData, meshName):
             mod.use_vertex_groups = True
         
         # Update mesh with new data
+        me.validate()
         me.update(calc_edges=True)
         
         bpy.ops.object.editmode_toggle()
@@ -988,6 +1006,8 @@ def bCreateSubMeshes(meshData, meshName):
     for area in areas:
         if area.type == 'VIEW_3D':
             area.spaces.active.viewport_shade='TEXTURED'
+            area.spaces.active.show_textured_solid = True
+
     
     return allObjects
         
@@ -1049,9 +1069,9 @@ def load(operator, context, filepath,
         # there is valid skeleton link and existing file
         if(skeletonFile!="None"):
             skeletonFileXml = skeletonFile + ".xml"
-            # if there isn't .xml file yet, convert the skeleton file
-            if(fileExist(skeletonFileXml)==False):
-                os.system('%s "%s"' % (ogreXMLconverter, skeletonFile))                
+            # if there isn't .xml file yet, convert the skeleton file            
+            if(not os.path.isfile(skeletonFileXml)):
+                os.system('%s "%s"' % (ogreXMLconverter, skeletonFile))
             # parse .xml skeleton file
             xDocSkeletonData = xOpenFile(skeletonFileXml)    
             if xDocSkeletonData != "None":
@@ -1068,6 +1088,8 @@ def load(operator, context, filepath,
         if not keep_xml:
             # cleanup by deleting the XML file we created
             os.unlink("%s" % pathMeshXml)
+            if 'skeleton' in meshData:
+                os.unlink("%s" % skeletonFileXml)
             
     if SHOW_IMPORT_TRACE:
         print("folder: %s" % folder)
@@ -1121,4 +1143,156 @@ def load(operator, context, filepath,
 #                os.unlink("%s" % filename)
     
     print("done.")
+    return {'FINISHED'}
+
+
+import bmesh
+from bpy_extras import object_utils
+from bpy_extras import image_utils
+
+
+def test():
+    vertices = []
+    vertices.append([-0.5,-0.5,0.5])
+    vertices.append([-0.5,-0.5,-0.5])
+    vertices.append([0.5,-0.5,-0.5])
+    
+    vertices.append([0.5,-0.5,-0.5])
+    vertices.append([0.5,-0.5,0.5])
+    vertices.append([-0.5,-0.5,0.5])
+    
+    faces = []
+    faces.append([0,1,2])
+    faces.append([3,4,5])
+    
+    uvs = []
+    uvs.append([0.5,0.3334])
+    uvs.append([0.5,0])
+    uvs.append([0,0])
+    
+    uvs.append([0,0])
+    uvs.append([0,0.3334])
+    uvs.append([0.5,0.3334])
+    
+    texturePath = "D:\\stuff\\Torchlight_modding\\org_models\\box\\box.png"
+    
+    
+     #create a mesh to put our parsed data in
+    mesh = bpy.data.meshes.new("BBox")
+    #uv_tex = mesh.uv_textures.new("texture")
+    
+    #construct using a bmesh
+    bm = bmesh.new()
+
+    for v_co in vertices:
+        bm.verts.new(v_co)
+
+    bm.faces.new([bm.verts[i] for i in range(len(vertices))])
+   
+#    uv_layer = bm.loops.layers.uv.get(uv_tex.name, False)
+#    if not uv_layer:
+#        # Catch possible error, but shouldn't happen
+#        return
+
+    uv_layer = bm.loops.layers.uv.new()
+    tex_layer = bm.faces.layers.tex.new()
+    
+    bpyima = image_utils.load_image(texturePath,
+     os.path.dirname(texturePath), place_holder=False, recursive=False)
+    tex = bpy.data.textures.new('ColorTex', type = 'IMAGE')
+    tex.image = bpy.data.images.load(texturePath)
+    
+    if bpyima:
+        texture = bpy.data.textures.new(name="text", type='IMAGE')
+        texture.image = bpyima
+
+        material = bpy.data.materials.new(name="matt")
+        material.use_shadeless = True
+
+        mtex = material.texture_slots.add()
+        mtex.texture = texture
+        mtex.texture_coords = 'UV'
+        mtex.use_map_color_diffuse = True
+
+        mesh.materials.append(material)
+#        for face in mesh.uv_textures[0].data:
+#            face.image = bpyima
+
+    
+    for f in bm.faces:
+        f[tex_layer].image = bpyima
+    
+    f.loops[0][uv_layer].uv = uvs[0]
+    f.loops[1][uv_layer].uv = uvs[1]
+    f.loops[2][uv_layer].uv = uvs[2]
+    f.loops[3][uv_layer].uv = uvs[3]
+    f.loops[4][uv_layer].uv = uvs[4]
+    f.loops[5][uv_layer].uv = uvs[5]
+#    for l in f.loops:
+#        l[uv_layer].uv = #,#
+    
+    bm.to_mesh(mesh)
+    mesh.update()
+    
+    
+    
+    object_utils.object_data_add(bpy.context, mesh)
+    
+#    # Create mesh and object
+#    me = bpy.data.meshes.new("box")
+#    ob = bpy.data.objects.new("box", me)        
+#    # Link object to scene
+#    scn = bpy.context.scene
+#    scn.objects.link(ob)
+#    scn.objects.active = ob
+#    scn.update()
+#    
+#    me.from_pydata(vertices, [], faces)    
+#    
+#    bpy.ops.mesh.uv_texture_add()
+#    uvtex = me.uv_textures[-1]
+#    uvtex.name = 'UVLayer'
+#    uvLayer = me.uv_layers[-1]
+#    
+#    uvLayer.data[0].uv = uvs[0]
+#    uvLayer.data[1].uv = uvs[1]
+#    uvLayer.data[2].uv = uvs[2]
+#    uvLayer.data[3].uv = uvs[3]
+#    uvLayer.data[4].uv = uvs[4]
+#    uvLayer.data[5].uv = uvs[5]
+#    
+#    
+#    tex = bpy.data.textures.new('ColorTex', type = 'IMAGE')
+#    tex.image = bpy.data.images.load(texture)
+#    tex.use_alpha = True
+#    
+#   # Create shadeless material and MTex
+#    mat = bpy.data.materials.new("box")
+#    mat.use_shadeless = True
+#    mtex = mat.texture_slots.add()
+#    mtex.texture = tex
+#    mtex.texture_coords = 'UV'
+#    mtex.use_map_color_diffuse = True 
+#    
+#    # add material to object
+#    ob.data.materials.append(mat)
+#    
+#    
+#    
+#    me.validate()
+#    me.update(calc_edges=True)
+#    
+#    bpy.ops.object.editmode_toggle()
+#    bpy.ops.mesh.faces_shade_smooth()
+#    bpy.ops.object.editmode_toggle()
+#    
+#    # forced view mode with textures
+#    bpy.context.scene.game_settings.material_mode = 'GLSL'
+#    areas = bpy.context.screen.areas
+#    for area in areas:
+#        if area.type == 'VIEW_3D':
+#            area.spaces.active.viewport_shade='TEXTURED'
+#            area.spaces.active.show_textured_solid = True
+                    
+    print("test done.")
     return {'FINISHED'}
