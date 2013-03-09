@@ -20,7 +20,7 @@
 
 """
 Name: 'OGRE for Torchlight (*.MESH)'
-Blender: 2.59, 2.62, 2.63a
+Blender: 2.59 and 2.62
 Group: 'Import/Export'
 Tooltip: 'Import/Export Torchlight OGRE mesh files'
     
@@ -32,7 +32,7 @@ and 'CCCenturion' for trying to refactor the code to be nicer (to be included)
 """
 
 __author__ = "Dusho"
-__version__ = "0.6.1 27-Sep-2012"
+__version__ = "0.6.2 09-Mar-2013"
 
 __bpydoc__ = """\
 This script imports/exports Torchlight Ogre models into/from Blender.
@@ -51,6 +51,7 @@ Known issues:<br>
     * imported materials will loose certain informations not applicable to Blender when exported
      
 History:<br>
+    * v0.6.2   (09-Mar-2013) - bug fixes (working with materials+textures), added 'Apply modifiers' and 'Copy textures'
     * v0.6.1   (27-Sep-2012) - updated to work with Blender 2.63a
     * v0.6     (01-Sep-2012) - added skeleton import + vertex weights import/export
     * v0.5     (06-Mar-2012) - added material import/export
@@ -154,9 +155,21 @@ class ExportTL(bpy.types.Operator, ExportHelper):
             default=True,   
             )
     
+    apply_modifiers = BoolProperty(
+            name="Apply Modifiers",
+            description="Applies modifiers",
+            default=True,   
+            )
+    
     overwrite_material = BoolProperty(
             name="Overwrite .material",
             description="Overwrites existing .material file, if present",
+            default=False,   
+            )
+            
+    copy_textures = BoolProperty(
+            name="Copy textures",
+            description="Copies material source textures to material file location",
             default=False,   
             )
     
@@ -192,7 +205,13 @@ class ExportTL(bpy.types.Operator, ExportHelper):
         row.prop(self, "apply_transform")
         
         row = layout.row(align=True)
+        row.prop(self, "apply_modifiers")
+        
+        row = layout.row(align=True)
         row.prop(self, "overwrite_material")
+        
+        row = layout.row(align=True)
+        row.prop(self, "copy_textures")
         
         row = layout.row(align=True)
         row.prop(self, "export_and_link_skeleton")

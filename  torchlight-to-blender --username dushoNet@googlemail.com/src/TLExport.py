@@ -14,7 +14,7 @@ and 'CCCenturion' for trying to refactor the code to be nicer (to be included)
 """
 
 __author__ = "Dusho"
-__version__ = "0.6.1 27-Sep-2012"
+__version__ = "0.6.2 09-Mar-2013"
 
 __bpydoc__ = """\
 This script imports/exports Torchlight Ogre models into/from Blender.
@@ -33,6 +33,7 @@ Known issues:<br>
     * imported materials will loose certain informations not applicable to Blender when exported
      
 History:<br>
+    * v0.6.2   (09-Mar-2013) - bug fixes (working with materials+textures), added 'Apply modifiers' and 'Copy textures'
     * v0.6.1   (27-Sep-2012) - updated to work with Blender 2.63a
     * v0.6     (01-Sep-2012) - added skeleton import + vertex weights import/export
     * v0.5     (06-Mar-2012) - added material import/export
@@ -50,6 +51,7 @@ import bpy
 from mathutils import Vector, Matrix
 #import math
 import os
+import shutil
 
 SHOW_EXPORT_DUMPS = False
 SHOW_EXPORT_TRACE = False
@@ -426,6 +428,15 @@ class Skeleton(object):
  
 
 #########################################
+def fileExist(filepath):
+    try:
+        filein = open(filepath)
+        filein.close()
+        return True
+    except:
+        print ("No file: ", filepath)
+        return False
+        
 def toFmtStr(number):
     #return str("%0.7f" % number)
     return str(round(number, 7))
@@ -600,7 +611,7 @@ def xSaveMeshData(meshData, filepath, export_and_link_skeleton):
     #doc.writexml(fileWr, "  ")
     fileWr.close() 
     
-def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag):
+def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag, copyTextures):
     
     #print("filepath: %s" % filepath)
     matFile = os.path.splitext(filepath)[0] # removing .mesh
@@ -617,39 +628,63 @@ def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag):
         #print ("Material: File", matFile, "not found!")
         isMaterial = False
     
-    # if there is material file, but we are not allowed to overwrite it, return
-    if isMaterial==True and overwriteMaterialFlag==False:
-        return
-    
-    if 'materials' not in meshData:
-        return
-    if len(meshData['materials'])<=0:
-        return
-    # write material        
-    fileWr = open(matFile, 'w')
     allMatData = meshData['materials']
-    for matName, matInfo in allMatData.items():
-        fileWr.write("material %s\n" % matName)
-        fileWr.write("{\n")
-        fileWr.write(indent(1) + "technique\n" + indent(1) + "{\n")
-        fileWr.write(indent(2) + "pass\n" + indent(2) + "{\n")
+    # if is no material file, or we are forced to overwrite it, write the material file
+    if isMaterial==False or overwriteMaterialFlag==True:
+        if 'materials' not in meshData:
+            return
+        if len(meshData['materials'])<=0:
+            return
+        # write material        
+        fileWr = open(matFile, 'w')        
+        for matName, matInfo in allMatData.items():
+            fileWr.write("material %s\n" % matName)
+            fileWr.write("{\n")
+            fileWr.write(indent(1) + "technique\n" + indent(1) + "{\n")
+            fileWr.write(indent(2) + "pass\n" + indent(2) + "{\n")
+            
+            # write material content here
+            fileWr.write(indent(3) + "ambient %f %f %f\n" % (matInfo['ambient'][0], matInfo['ambient'][1], matInfo['ambient'][2]))
+            fileWr.write(indent(3) + "diffuse %f %f %f\n" % (matInfo['diffuse'][0], matInfo['diffuse'][1], matInfo['diffuse'][2]))
+            fileWr.write(indent(3) + "specular %f %f %f 0\n" % (matInfo['specular'][0], matInfo['specular'][1], matInfo['specular'][2]))
+            fileWr.write(indent(3) + "emissive %f %f %f\n" % (matInfo['emissive'][0], matInfo['emissive'][1], matInfo['emissive'][2]))
+            
+            if 'texture' in matInfo:
+                fileWr.write(indent(3) + "texture_unit\n" + indent(3) + "{\n")
+                fileWr.write(indent(4) + "texture %s\n" % matInfo['texture'])
+                fileWr.write(indent(3) + "}\n") # texture unit
+            
+            fileWr.write(indent(2) + "}\n") # pass
+            fileWr.write(indent(1) + "}\n") # technique
+            fileWr.write("}\n")
         
-        # write material content here
-        fileWr.write(indent(3) + "ambient %f %f %f\n" % (matInfo['ambient'][0], matInfo['ambient'][1], matInfo['ambient'][2]))
-        fileWr.write(indent(3) + "diffuse %f %f %f\n" % (matInfo['diffuse'][0], matInfo['diffuse'][1], matInfo['diffuse'][2]))
-        fileWr.write(indent(3) + "specular %f %f %f 0\n" % (matInfo['specular'][0], matInfo['specular'][1], matInfo['specular'][2]))
-        fileWr.write(indent(3) + "emissive %f %f %f\n" % (matInfo['emissive'][0], matInfo['emissive'][1], matInfo['emissive'][2]))
-        
-        if 'texture' in matInfo:
-            fileWr.write(indent(3) + "texture_unit\n" + indent(3) + "{\n")
-            fileWr.write(indent(4) + "texture %s\n" % matInfo['texture'])
-            fileWr.write(indent(3) + "}\n") # texture unit
-        
-        fileWr.write(indent(2) + "}\n") # pass
-        fileWr.write(indent(1) + "}\n") # technique
-        fileWr.write("}\n")
+        fileWr.close()
     
-    fileWr.close()
+    #print("CopyTextures: %s" % copyTextures)
+    if copyTextures:
+        #print("CopyTextures: true")
+        #try to copy material textures to destination
+        for matName, matInfo in allMatData.items():
+            if 'texture' in matInfo:
+                if 'texture_path' in matInfo:
+                    srcTextureFile = matInfo['texture_path']
+                    #print("Source\"%s\"" % srcTextureFile)
+                    #print("Path exists \"%s\"" % os.path.exists(srcTextureFile))
+                    baseDirName = os.path.dirname(bpy.data.filepath)
+                    if (srcTextureFile[0:2] == "//"):
+                        print("Converting relative image name \"%s\"" % srcTextureFile)
+                        srcTextureFile = os.path.join(baseDirName, srcTextureFile[2:])
+                    if fileExist(srcTextureFile):
+                        # copy texture to dir
+                        print("Copying texture \"%s\"" % srcTextureFile)
+                        try:
+                            print(" to \"%s\"" % os.path.dirname(matFile))
+                            shutil.copy(srcTextureFile, os.path.dirname(matFile))
+                        except:
+                            print("Error copying \"%s\"" % srcTextureFile)
+                    else:
+                        print("Can't copy texture \"%s\" because file does not exists!" % srcTextureFile)
+
     
 
 def getVertexIndex(vertexInfo, vertexList):
@@ -662,15 +697,20 @@ def getVertexIndex(vertexInfo, vertexList):
     vertexList.append(vertexInfo)
     return len(vertexList)-1
 
-def bCollectMeshData(meshData, selectedObjects):
+def bCollectMeshData(meshData, selectedObjects, applyModifiers):
     
     subMeshesData = []
-    for ob in selectedObjects:
-        subMeshData = {}
+    for ob in selectedObjects:             
+        subMeshData = {}        
         #ob = bpy.types.Object ##
         materialName = ob.name
+        if len(ob.data.materials)>0:
+            materialName = ob.data.materials[0].name       
         #mesh = bpy.types.Mesh ##
-        mesh = ob.data     
+        if applyModifiers:        
+            mesh = ob.to_mesh(bpy.context.scene, True, 'PREVIEW')
+        else:
+            mesh = ob.data     
         
         # blender 2.62 <-> 2.63 compatibility
         if(blender_version<=262):
@@ -790,6 +830,10 @@ def bCollectMeshData(meshData, selectedObjects):
         subMeshData['geometry'] = geometry
         subMeshesData.append(subMeshData)
         
+        # if mesh was newly created with modifiers, remove the mesh
+        if applyModifiers:
+            bpy.data.meshes.remove(mesh)
+        
     meshData['submeshes']=subMeshesData
     
     return meshData
@@ -830,8 +874,8 @@ def bCollectMaterialData(blenderMeshData, selectedObjects):
     allMaterials = {}
     blenderMeshData['materials'] = allMaterials
     
-    for ob in selectedObjects:
-        if len(ob.data.materials)>0:
+    for ob in selectedObjects:   
+        if ob.type == 'MESH' and len(ob.data.materials)>0:
             for mat in ob.data.materials:
                 #mat = bpy.types.Material ##
                 if mat.name not in allMaterials:
@@ -847,19 +891,22 @@ def bCollectMaterialData(blenderMeshData, selectedObjects):
                     matInfo['emissive']=[mat.emit,mat.emit,mat.emit]                    
                     # texture
                     if len(mat.texture_slots)>0:
-                        if mat.texture_slots[0].texture:                       
-                            matInfo['texture'] = mat.texture_slots[0].texture.image.name
+                        if mat.texture_slots[0].texture:
+                            if mat.texture_slots[0].texture.type == 'IMAGE':
+                                #print('\t\t XXXX:', mat.texture_slots[0].texture.type)
+                                matInfo['texture'] = mat.texture_slots[0].texture.image.name
+                                matInfo['texture_path'] = mat.texture_slots[0].texture.image.filepath
     
     
-def SaveMesh(filepath, selectedObjects, ogreXMLconverter,
-              overrideMaterialFlag, export_and_link_skeleton, keep_xml):
+def SaveMesh(filepath, selectedObjects, ogreXMLconverter, applyModifiers,
+              overrideMaterialFlag, copyTextures, export_and_link_skeleton, keep_xml):
     
     blenderMeshData = {}
     
     #skeleton
     bCollectSkeletonData(blenderMeshData, selectedObjects) 
     #mesh
-    bCollectMeshData(blenderMeshData, selectedObjects)
+    bCollectMeshData(blenderMeshData, selectedObjects, applyModifiers)
     #materials
     bCollectMaterialData(blenderMeshData, selectedObjects)
     
@@ -879,7 +926,7 @@ def SaveMesh(filepath, selectedObjects, ogreXMLconverter,
     
     xSaveMeshData(blenderMeshData, filepath, export_and_link_skeleton)
     
-    xSaveMaterialData(filepath, blenderMeshData, overrideMaterialFlag)
+    xSaveMaterialData(filepath, blenderMeshData, overrideMaterialFlag, copyTextures)
     
     XMLtoOGREConvert(blenderMeshData, filepath, ogreXMLconverter,
                       export_and_link_skeleton, keep_xml)
@@ -909,7 +956,9 @@ def save(operator, context, filepath,
          ogreXMLconverter=None,
          keep_xml=DEFAULT_KEEP_XML,
          apply_transform=True,
+         apply_modifiers=True,
          overwrite_material=False,
+         copy_textures=False,
          export_and_link_skeleton=False,):
             
     global blender_version
@@ -935,15 +984,15 @@ def save(operator, context, filepath,
     selectedObjects = []
     scn = bpy.context.scene
     for ob in scn.objects:
-        if ob.select==True:            
+        if ob.select==True and ob.type!='ARMATURE':            
             selectedObjects.append(ob)
                 
     if len(selectedObjects)==0:
         print("No objects selected for export.")
         return ('CANCELLED')
         
-    SaveMesh(filepath, selectedObjects, ogreXMLconverter,
-              overwrite_material, export_and_link_skeleton, keep_xml)
+    SaveMesh(filepath, selectedObjects, ogreXMLconverter, apply_modifiers,
+              overwrite_material, copy_textures, export_and_link_skeleton, keep_xml)
     
     
     print("done.")
